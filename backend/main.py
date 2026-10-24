@@ -51,7 +51,7 @@ def seed():
         doctors=[Doctor(id=1, name="Dr. Nguyen")],
         patients=[
             Patient(id=1, name="Grandma Lan", age=78, doctor_id=1,
-                    phone="+15550000001", family_phone="+15550000002"),
+                    phone="+15705514374", family_phone="+15705514374"),  # Minh Dau's phone for the demo
             Patient(id=2, name="Mr. Tran", age=82, doctor_id=1,
                     phone="+15550000003", family_phone="+15550000004"),
         ],
