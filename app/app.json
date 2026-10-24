@@ -17,7 +17,8 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "package": "edu.hackpsu.thuoctracker"
+      "package": "edu.hackpsu.thuoctracker",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -29,6 +30,12 @@
           "defaultChannel": "default"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "a24422f3-b819-41c1-a63f-7f79e6381b52"
+      }
+    },
+    "owner": "minhdeptraivcl"
   }
 }
