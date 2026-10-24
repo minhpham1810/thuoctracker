@@ -4,6 +4,13 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 18:05 Minh Dau (app + backend): **Real push notifications on Android.** The app is a development build now: Expo project `@minhdeptraivcl/thuoctracker` with Firebase FCM set up. Install the APK on Android phones: https://expo.dev/artifacts/eas/eGW9mu9nQSFXYmpwcVxmKkgN8vcxr0A8b4TIdMBRKus.apk
+  - To run: on the laptop, `cd app`, then `$env:REACT_NATIVE_PACKAGER_HOSTNAME="192.168.137.1"; npx expo start`. Open the installed ThuocTracker app (not Expo Go), log in, and allow notifications. Alerts, pill time and chat then push even with the app closed.
+  - iPhone: keep using Expo Go with `npx expo start --go`. Plain `npx expo start` now opens the development build.
+  - Network: Minh Dau's laptop hotspot. Backend `http://192.168.137.1:8000`, web `http://192.168.137.1:3000`. Thanh: `BACKEND_URL=http://192.168.137.1:8000`, kiosk `http://192.168.137.1:3000/cabinet?patient=1`.
+  - Push failures print as `[push error] …` in the uvicorn console.
+  - Minh Pham: the dashboard's "Push sent to … phone" line appears even when no phone is registered. It's true now only if the family or doctor is logged in on a development build.
+
 - 17:30 Thanh (pi + cabinet screen): **Contract change: the cabinet has 7 boxes, `Medicine.slot` is now 1-7.** Boxes 1-3 top row, 4-6 middle row, 7 a long box across the bottom; every box holds pills like a slot. Additive: slots 1-3 still work. Changed `models.py`, `web/lib/api.ts` (`SLOTS`, `LONG_SLOT`), the add-medicine slot picker and the dashboard's prescription cards (filled boxes plus one "add" card), and `pi/main.py` (box n = PCA9685 channel n-1). **Cabinet screen redesigned** as a picture of the cabinet: the box to open glows with OPEN and the rest fade, each box shows its pills left with "Refill soon" / "Expires in N d", tapping a box opens its details, the take screen says "Open box N · take <dose>", and a Today strip along the bottom shows taken / missed / due / coming doses. Tested on the Pi touchscreen (800x480). Also: the Pi now boots straight into the kiosk with the mic flags (`pi/setup.sh`).
   - Minh Dau: please check the slot change is fine with the backend; nothing else in the backend needed changing.
   - Minh Pham: I edited `web/app/cabinet/*` and two doctor files (slot lists only). On the Pi, serve the web app with `npm run build && npx next start -H 0.0.0.0`: dev mode blocks the Pi's browser (cross-origin dev resources).
