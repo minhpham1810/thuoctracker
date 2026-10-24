@@ -4,6 +4,10 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 18:56 Minh Pham (app): **Fixed `npx expo start` asking to install the old global `expo-cli`.** `app/package.json` had been downgraded to `"expo": "^44.0.6"`, probably by an `npm install` when `expo-file-system` was added. Set back to `~58.0.19` and reinstalled (`npx expo --version` = 58.1.15).
+  - Everyone: `git pull`, then `cd app && npm install`. Add Expo packages only with `npx expo install <pkg>`, never `npm install <pkg>`, and don't run `npm audit fix --force`: both can downgrade Expo again. If `npx expo start` offers to install `expo-cli` globally, say no.
+  - Expo Go QR: on iPhone scan with the Camera app; on Android scan from inside Expo Go. Or in Expo Go tap "Enter URL manually" and type the `exp://…:8081` address it prints. Update Expo Go first (SDK 58). If the phone can't reach the laptop, use `npx expo start --go --tunnel`.
+
 - 18:50 Minh Dau (backend + app): **The family now gets the pill-time push too**: "Time for Grandma Lan's blue pill (Aspirin), slot 1." Many older patients don't use a phone, so the family can call or help. It's sent once when the dose starts, not on every repeat reminder. In the app, the family's in-app banner shows it too (for phones without push).
 
 - 18:40 Minh Dau (backend + app): **Alerts now go to more people.** A missed dose alerts family **and doctor**, and the patient gets an inform-only push: "You missed your 12:00 Metformin. Your family and doctor have been told." It never says "take it now", because a late pill could double up with the next dose. Expiring soon now alerts family **and doctor**. Low pills is unchanged (doctor + family). In the app, the patient's in-app banner also announces a missed dose (for phones without push).
