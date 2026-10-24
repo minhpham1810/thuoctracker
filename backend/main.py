@@ -308,6 +308,7 @@ def tick():
         if m.expiration - now.date() <= timedelta(days=7) and expiring not in mem["sent"]:
             mem["sent"].add(expiring)
             add_alert("expiring_soon", "family", p, f"{p.name}'s {m.name} expires on {m.expiration}.")
+            add_alert("expiring_soon", "doctor", p, f"{p.name}'s {m.name} expires on {m.expiration}.")
     for d in [DoseLog(**r) for r in q("SELECT * FROM doses WHERE status = 'pending'")]:
         m = meds[d.medicine_id]
         if now - d.due_at >= MISSED_AFTER:
@@ -318,6 +319,9 @@ def tick():
             set_state(p.id, "missed", d, m, "You missed your pill.")
             say(p.id, d, "You missed your pill.", "missed")
             add_alert("missed", "family", p, f"{p.name} missed {m.name} ({d.due_at:%H:%M}).")
+            add_alert("missed", "doctor", p, f"{p.name} missed {m.name} ({d.due_at:%H:%M}).")
+            # inform only: never tell the patient to take it late (could double up with the next dose)
+            push_to("patient", p, "Missed pill", f"You missed your {d.due_at:%H:%M} {m.name}. Your family and doctor have been told.")
         elif now - mem["reminded"].get(d.id, d.due_at) >= REMIND_EVERY:
             remind(d, m)
 

@@ -30,9 +30,9 @@ The team coordinates through the repo, not the group chat. Who owns what and the
 ## Rules the backend owns
 
 - Pill time: remind (screen flash + "Time for your pill"), repeat every 10 min, push to the patient's phone.
-- No pill removed after 30 min (30 s in demo) -> `missed`, push to family. Screen tap "I took it" counts as taken.
+- No pill removed after 30 min (30 s in demo) -> `missed`, push to family and doctor, plus an inform-only push to the patient (never "take it now"). Screen tap "I took it" counts as taken.
 - `pills_left < 5` -> `low_pills` alert to doctor and family.
-- Expiration within 7 days -> `expiring_soon` alert to family.
+- Expiration within 7 days -> `expiring_soon` alert to family and doctor.
 - Same dose opened twice -> screen warning "You already took this one."
 - Taken = camera count before minus after is exactly 1.
 

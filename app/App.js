@@ -107,6 +107,9 @@ async function collectEvents(user) {
   } else {
     const c = await api.cabinetState(user.id);
     if (c.mode === 'take') out.push({ id: `d${c.dose_id}`, title: 'Pill time', body: c.message });
+    if (c.mode === 'missed') {
+      out.push({ id: `x${c.dose_id}`, title: 'Missed pill', body: `You missed your ${c.medicine}. Your family and doctor have been told.` });
+    }
   }
   return out;
 }
