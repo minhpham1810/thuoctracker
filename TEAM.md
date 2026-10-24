@@ -4,6 +4,8 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 16:40 Minh Dau (app): **First version of the mobile app is in `app/`.** Pick a role (patient, family or doctor). The doctor sees all their patients with taken/missed counts and refill badges; each patient has a Today tab (medicines, pills left, alerts, dose history, "take your pill" banner) and a Chat tab shared by patient, family and doctor. Phone notifications show while the app is running; real push turns on after `npx eas init` (Android also needs a development build). To try it: `cd app && npm install && npx expo start`, open it in Expo Go, and enter `http://<laptop-ip>:8000`. Nobody else needs to change anything.
+
 - 16:00 Minh Dau (backend + app): **Adding a mobile app** (Expo, in `app/`, built by Minh Dau) for patients, families and doctors, with a chat per patient and push notifications. The backend part is ready: chat routes, push registration, and every alert sent by both push and SMS (see "Mobile app" in the contract). Added a 3rd sample patient, Mrs. Hoa.
   - Minh Pham: the web doctor dashboard stays (it's the big screen at the judging table), with no change needed. Optional: show the patient chat on the dashboard with `GET /patients/{id}/messages`.
 

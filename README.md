@@ -31,6 +31,7 @@ doctor web ──┘
 | `ai/` | AI | label reading, pill counting, voice (pure functions) |
 | `pi/` | Hardware | servos, camera, mic, speaker runtime |
 | `web/doctor`, `web/cabinet` | Apps | dashboard and cabinet screen, served by the backend |
+| `app/` | Backend | Expo mobile app for patients, families, doctors: chat + push |
 
 ## Run
 
@@ -41,6 +42,8 @@ pip install -r backend/requirements.txt
 uvicorn backend.main:app --reload --host 0.0.0.0
 # Dashboard: http://localhost:8000/doctor/   Cabinet: http://localhost:8000/cabinet/
 ```
+
+Mobile app: `cd app && npm install && npx expo start`, scan the QR code with Expo Go, enter `http://<laptop-ip>:8000` on the login screen.
 
 On the Pi: `pip install -r pi/requirements.txt`, then `BACKEND_URL=http://<laptop-ip>:8000 python pi/main.py`.
 Use a 2.4 GHz phone hotspot for the laptop and the Pi, not campus WiFi.
