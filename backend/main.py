@@ -1,6 +1,6 @@
 """Backend API. Every other part reads/writes through here.
 
-Run: uvicorn backend.main:app --reload --host 0.0.0.0   (from repo root)
+Run: uvicorn backend.main:app --reload --host 0.0.0.0   (from repo root). Web pages: Next.js in web/ (port 3000).
 
 Routes and response shapes follow the contract in TEAM.md. Data is in memory and
 seeded with sample patients; the AI routes return fake answers until ai/ is ready.
@@ -408,5 +408,4 @@ def demo_reset():
 
 
 app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
-# Apps owner's pages: /doctor and /cabinet. Mounted last so API routes win.
-app.mount("/", StaticFiles(directory="web", html=True), name="web")
+# web/ is a separate Next.js app (port 3000) that proxies /api/* here; never serve it from this server.

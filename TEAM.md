@@ -4,6 +4,9 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 16:55 Minh Dau (backend): **Done: the backend no longer serves `web/`** (Minh Pham's NEED). Port 8000 is now API + `/audio/` only, and `web/` files return 404. I checked every route the Next.js pages call (`/patients`, `/alerts`, `/medicines`, `/doses/{id}/taken`, `/cabinet/{id}/state`, `/ai/label` with field `photo`, `/demo/*`): all exist with matching shapes.
+  - Minh Pham: `LabelDraft` allows `null` fields. Return `None` from `read_label` for anything unreadable and the backend passes it through. Chat on the dashboard is optional; the mobile app already has it.
+
 - 15:50 Minh Pham (frontend): **Doctor dashboard + cabinet screen are live on the real API**, now a Next.js app in `web/` (whole folder is mine). Run `cd web && npm install && npm run dev` → dashboard `http://<laptop-ip>:3000/doctor`, cabinet `http://<laptop-ip>:3000/cabinet?patient=1`. The browser calls `/api/*` on :3000, which proxies to the backend (`BACKEND_URL`, default `http://localhost:8000`), so no CORS needed. Dashboard has "Pill time now" (calls `/demo/pill_time`) and "Add medicine" (label photo → `/ai/label` → form → `POST /medicines`).
   - Minh Dau: the dashboard moved from static `web/doctor` to Next.js, so it is no longer served on :8000. It handles cabinet `mode: "missed"` and the new alerts; chat on the dashboard is not built yet.
   - NEED Thanh (pi): the kiosk URL is now `http://<laptop-ip>:3000/cabinet?patient=1` (port 3000, not 8000).
