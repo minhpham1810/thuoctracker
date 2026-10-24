@@ -3,7 +3,7 @@
 Run: uvicorn backend.main:app --reload --host 0.0.0.0   (from repo root). Web pages: Next.js in web/ (port 3000).
 
 Routes and response shapes follow the contract in TEAM.md. Data is in memory and
-seeded with sample patients; the AI routes return fake answers until ai/ is ready.
+seeded with sample patients; AI routes fall back to fake answers if ai/ fails.
 """
 import asyncio
 import hashlib

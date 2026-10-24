@@ -66,3 +66,17 @@
 .cab-took .icon { width: 1.1em; height: 1.1em; }
 .cab-took:active { transform: translateY(4px); box-shadow: 0 2px 0 #0f5f2d; }
 .cab-took:disabled { opacity: .7; }
+
+/* Voice question: secondary to "I took it", so it hides while a pill is due */
+.cab-ask {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  min-height: clamp(56px, 12vh, 84px); border: 3px solid var(--primary); border-radius: 18px;
+  background: var(--card); color: var(--primary); font: 700 clamp(22px, 5.4vh, 36px)/1 var(--font-heading), sans-serif;
+}
+.cab-ask .icon { width: 1.1em; height: 1.1em; }
+.cab-ask:active { transform: translateY(2px); }
+.cab-ask:disabled { opacity: .7; }
+.cab-ask.listening { background: var(--bad); border-color: var(--bad); color: #fff; animation: listen 1.2s ease-in-out infinite; }
+@keyframes listen { 50% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--bad) 25%, transparent); } }
+.cab-answer { font-size: clamp(26px, 7vh, 52px); max-width: 26ch; }
+@media (prefers-reduced-motion: reduce) { .cab-ask.listening, .mode-take .cab-slot.active { animation: none; } }

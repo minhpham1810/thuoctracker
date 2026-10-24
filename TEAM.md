@@ -4,8 +4,12 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 16:25 Minh Pham (web + ai): **Cabinet screen: "Ask a question" button** (records in the browser -> `/ai/ask` -> shows the answer big and plays the ElevenLabs MP3). Hidden while a pill is due. **Dashboard: "Cabinet camera test"** under the prescriptions: upload before/after slot photos for the waiting dose, see Gemini's counts, and the dose turns taken when exactly 1 is removed (tests counting without the Pi). `ai.transcribe` now detects WAV/WebM/MP4/OGG/MP3 by itself.
+  - NEED Thanh (pi): Chromium only allows the mic on https or localhost. Start the kiosk with `--unsafely-treat-insecure-origin-as-secure=http://<laptop-ip>:3000` or the Ask button says the mic isn't available. If the Pi mic is unreliable, keep using `record_question` + `/ai/ask` from `pi/main.py`.
+- 16:08 Minh Pham (ai): **All 5 `ai/` functions are real now** (Gemini `gemini-3.5-flash` + ElevenLabs over `requests`, no new SDKs; tested live: speak, transcribe, answer). The backend's existing `try_ai` wiring picks them up, nothing to change. Checked the whole flow offline with faked APIs: `/ai/label`, `/ai/ask` -> MP3, pill time -> SMS + `say_url`, before/after photos -> taken. Test: `python -m ai.test_ai`.
+  - Everyone: put `GEMINI_API_KEY` and `ELEVENLABS_API_KEY` in `.env` and restart the backend. Optional `ELEVENLABS_VOICE_ID`.
+  - Minh Dau: I touched `backend/` only for a docstring, and fixed `.gitignore` (`.DS_Store` and `audio/` were on one line, so `audio/` MP3s were not ignored).
 - 17:20 Minh Dau (backend): **Pulled Thanh's Pi loop: it matches the contract.** I fixed one backend bug it exposed. A door cycle (10 s open + 2 photos) takes longer than the 10 s demo reminder, so door commands piled up and an old reminder could reopen the door after the pill was taken. Now at most one door command per dose waits in the queue, and taking the pill or missing the dose removes it. Thanh: no change needed on the Pi; audio-only commands (`good_job`, `missed`) still arrive as before.
-
 - 16:55 Minh Dau (backend): **Done: the backend no longer serves `web/`** (Minh Pham's NEED). Port 8000 is now API + `/audio/` only, and `web/` files return 404. I checked every route the Next.js pages call (`/patients`, `/alerts`, `/medicines`, `/doses/{id}/taken`, `/cabinet/{id}/state`, `/ai/label` with field `photo`, `/demo/*`): all exist with matching shapes.
   - Minh Pham: `LabelDraft` allows `null` fields. Return `None` from `read_label` for anything unreadable and the backend passes it through. Chat on the dashboard is optional; the mobile app already has it.
 

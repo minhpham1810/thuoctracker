@@ -160,3 +160,8 @@ label.field small { font-weight: 400; color: var(--muted); }
 .rx.slot-empty .slot-label { font: 600 .8125rem/1.4 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .02em; }
 .alert-head { display: flex; justify-content: space-between; gap: 8px; font-size: .8125rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 .method { font-size: .8125rem; color: var(--muted); }
+
+/* Cabinet camera test (stands in for the Pi camera) */
+.cam-test { display: grid; gap: 10px; }
+.cam-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.cam-test label:has(input:disabled) { opacity: .6; cursor: default; }

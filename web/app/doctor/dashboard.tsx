@@ -7,6 +7,7 @@ import {
   type Alert, type DoseLog, type Medicine, type Patient,
 } from "@/lib/api";
 import AddMedicine from "./add-medicine";
+import CameraTest from "./camera-test";
 
 const DOCTOR_ID = 1;
 const POLL_MS = 3000;
@@ -249,6 +250,9 @@ function PatientView({ patient, meds, doses, onAdd, onChange }: {
           );
         })}
       </div>
+
+      <div className="section-title"><h3>Cabinet camera test</h3></div>
+      <CameraTest key={patient.id} patientId={patient.id} doses={doses} meds={meds} onChange={onChange} />
 
       <div className="section-title"><h3>Dose history</h3></div>
       {doses.length ? (
