@@ -281,7 +281,10 @@ def remind(dose: DoseLog, m: Medicine):
 def start_dose(m: Medicine, due_at: datetime) -> DoseLog:
     dose = DoseLog(**q1("INSERT INTO doses (medicine_id, due_at) VALUES (%s, %s) RETURNING *", m.id, due_at))
     remind(dose, m)
-    push_to("patient", get_patient(m.patient_id), "Pill time", f"Time for your {m.color} pill ({m.name}).")
+    p = get_patient(m.patient_id)
+    push_to("patient", p, "Pill time", f"Time for your {m.color} pill ({m.name}).")
+    # many older patients don't use a phone: family gets it too so they can call or help
+    push_to("family", p, "Pill time", f"Time for {p.name}'s {m.color} pill ({m.name}), slot {m.slot}.")
     return dose
 
 

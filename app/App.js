@@ -104,6 +104,13 @@ async function collectEvents(user) {
     for (const a of await api.alerts()) {
       if (a.to === user.role && pids.includes(a.patient_id)) out.push({ id: `a${a.id}`, title: 'ThuocTracker', body: a.message });
     }
+    if (user.role === 'family') {
+      const c = await api.cabinetState(user.patient_id);
+      if (c.mode === 'take') {
+        const who = nameOf[user.patient_id] ?? 'Your family member';
+        out.push({ id: `d${c.dose_id}`, title: 'Pill time', body: `Time for ${who}'s ${c.color} pill (${c.medicine}), slot ${c.slot}.` });
+      }
+    }
   } else {
     const c = await api.cabinetState(user.id);
     if (c.mode === 'take') out.push({ id: `d${c.dose_id}`, title: 'Pill time', body: c.message });

@@ -4,6 +4,8 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 18:50 Minh Dau (backend + app): **The family now gets the pill-time push too**: "Time for Grandma Lan's blue pill (Aspirin), slot 1." Many older patients don't use a phone, so the family can call or help. It's sent once when the dose starts, not on every repeat reminder. In the app, the family's in-app banner shows it too (for phones without push).
+
 - 18:40 Minh Dau (backend + app): **Alerts now go to more people.** A missed dose alerts family **and doctor**, and the patient gets an inform-only push: "You missed your 12:00 Metformin. Your family and doctor have been told." It never says "take it now", because a late pill could double up with the next dose. Expiring soon now alerts family **and doctor**. Low pills is unchanged (doctor + family). In the app, the patient's in-app banner also announces a missed dose (for phones without push).
   - Minh Pham: there are now two alert rows per missed or expiring event (`to: "family"` and `to: "doctor"`), the same as low pills already had. The dashboard may want to show only the doctor rows.
   - Heads-up: a backend test of mine ran `/demo/reset` on the shared Tiger Data database around 18:30, so anything added since the last reset was wiped back to the demo seed. Sorry. I won't test against the shared database again.
