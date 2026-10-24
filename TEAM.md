@@ -4,6 +4,8 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 17:20 Minh Dau (backend): **Pulled Thanh's Pi loop: it matches the contract.** I fixed one backend bug it exposed. A door cycle (10 s open + 2 photos) takes longer than the 10 s demo reminder, so door commands piled up and an old reminder could reopen the door after the pill was taken. Now at most one door command per dose waits in the queue, and taking the pill or missing the dose removes it. Thanh: no change needed on the Pi; audio-only commands (`good_job`, `missed`) still arrive as before.
+
 - 16:55 Minh Dau (backend): **Done: the backend no longer serves `web/`** (Minh Pham's NEED). Port 8000 is now API + `/audio/` only, and `web/` files return 404. I checked every route the Next.js pages call (`/patients`, `/alerts`, `/medicines`, `/doses/{id}/taken`, `/cabinet/{id}/state`, `/ai/label` with field `photo`, `/demo/*`): all exist with matching shapes.
   - Minh Pham: `LabelDraft` allows `null` fields. Return `None` from `read_label` for anything unreadable and the backend passes it through. Chat on the dashboard is optional; the mobile app already has it.
 

@@ -163,6 +163,7 @@ def mark_taken(dose: DoseLog, method: Literal["camera", "screen"]):
         say(m.patient_id, dose, "You already took this one.", "already_took")
         return
     dose.status, dose.taken_at, dose.method = "taken", datetime.now(), method
+    drop_door_commands(m.patient_id, dose.id)
     m.pills_left = max(m.pills_left - 1, 0)
     set_state(m.patient_id, "taken", dose, "Good job!")
     say(m.patient_id, dose, "Good job!", "good_job")
@@ -170,6 +171,16 @@ def mark_taken(dose: DoseLog, method: Literal["camera", "screen"]):
 
 def push_command(patient_id: int, cmd: dict):
     db["commands"].setdefault(patient_id, []).append(cmd)
+
+
+def door_queued(patient_id: int, dose_id: int) -> bool:
+    return any(c["dose_id"] == dose_id and "open_slot" in c for c in db["commands"].get(patient_id, []))
+
+
+def drop_door_commands(patient_id: int, dose_id: int):
+    """Dose is settled: queued reminders must not reopen the door."""
+    queue = db["commands"].get(patient_id, [])
+    queue[:] = [c for c in queue if not (c["dose_id"] == dose_id and "open_slot" in c)]
 
 
 def dose_log(patient_id: int) -> list[dict]:
@@ -198,6 +209,8 @@ def add_alert(type: str, to: Literal["doctor", "family"], p: Patient, message: s
 
 def remind(dose: DoseLog, m: Medicine):
     db["reminded"][dose.id] = datetime.now()
+    if door_queued(m.patient_id, dose.id):  # Pi hasn't picked up the last one yet (door cycle > repeat time)
+        return
     say(m.patient_id, dose, f"Time for your {m.color} pill, {m.name}.", "time_for_pill", open_slot=m.slot)
     set_state(m.patient_id, "take", dose, f"Take your {m.color} pill now ({m.name})")
 
@@ -241,6 +254,7 @@ def tick():
         if now - d.due_at >= MISSED_AFTER:
             d.status = "missed"
             p = find("patients", m.patient_id)
+            drop_door_commands(p.id, d.id)
             set_state(p.id, "missed", d, "You missed your pill.")
             say(p.id, d, "You missed your pill.", "missed")
             add_alert("missed", "family", p, f"{p.name} missed {m.name} ({d.due_at:%H:%M}).")
