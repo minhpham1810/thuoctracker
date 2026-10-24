@@ -1,18 +1,32 @@
 // Talks to the backend (see TEAM.md for routes). The URL is set on the login screen
 // because the laptop's hotspot IP changes.
-let base = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://192.168.1.10:8000';
+import Constants from 'expo-constants';
 
-export const setBaseUrl = (url) => { base = url.replace(/\/+$/, ''); };
+// In development the app is served by Expo on the backend laptop, so its host is the laptop's IP.
+const devHost = Constants.expoConfig?.hostUri?.split(':')[0];
+let base = process.env.EXPO_PUBLIC_BACKEND_URL || (devHost ? `http://${devHost}:8000` : 'http://192.168.137.1:8000');
+
+export const setBaseUrl = (url) => { base = url.trim().replace(/\/+$/, ''); };
 export const getBaseUrl = () => base;
 
 async function call(method, path, body) {
-  const res = await fetch(base + path, {
-    method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) throw new Error(`${method} ${path}: ${res.status}`);
-  return res.json();
+  // fetch has no timeout of its own; a wrong IP would hang for a minute with no feedback
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const res = await fetch(base + path, {
+      method,
+      signal: ctrl.signal,
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) throw new Error(`${method} ${path}: ${res.status}`);
+    return res.json();
+  } catch (e) {
+    throw new Error(e.name === 'AbortError' ? 'timed out' : e.message);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export const api = {

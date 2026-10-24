@@ -16,15 +16,21 @@ export default function Login({ onLogin }) {
   const [people, setPeople] = useState(null);
   const [name, setName] = useState('');
   const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
 
   const pickRole = async (r) => {
+    if (busy) return;
     setBaseUrl(url);
     setError(null);
+    setBusy(true);
     try {
       setPeople(r === 'doctor' ? await api.doctors() : await api.patients());
       setRole(r);
     } catch (e) {
-      setError(`Can't reach the backend at ${url}. Same hotspot? Server running?`);
+      setError(`Can't reach the backend at ${url} (${e.message}). Same hotspot? Server running? ` +
+               `Try opening ${url}/health in the phone's browser.`);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -47,7 +53,7 @@ export default function Login({ onLogin }) {
           <Title>Who are you?</Title>
           {ROLES.map((r) => (
             <Card key={r.role}>
-              <Button title={r.label} onPress={() => pickRole(r.role)} big />
+              <Button title={busy ? 'Connecting…' : r.label} onPress={() => pickRole(r.role)} big />
               <Text style={s.hint}>{r.hint}</Text>
             </Card>
           ))}
