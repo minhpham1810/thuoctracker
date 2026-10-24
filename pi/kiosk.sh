@@ -13,7 +13,7 @@ while true; do
   # the "Ask a question" button needs the mic: Chromium only allows it on https,
   # so mark the laptop as secure and auto-accept the permission prompt
   "$BROWSER" --kiosk --incognito --noerrdialogs --disable-infobars --no-first-run \
-    --password-store=basic --disable-session-crashed-bubble \
+    --password-store=basic --disable-session-crashed-bubble --ozone-platform-hint=auto \
     --unsafely-treat-insecure-origin-as-secure="$ORIGIN" --use-fake-ui-for-media-stream \
     "$SCREEN_URL"
   sleep 2
