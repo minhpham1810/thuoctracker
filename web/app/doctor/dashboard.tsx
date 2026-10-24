@@ -4,12 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon, Logo } from "@/components/icon";
 import {
   api, daysUntil, fmtDate, fmtDateTime, fmtTime, LONG_SLOT, pillColor, SLOTS,
-  type Alert, type DoseLog, type Medicine, type Patient,
+  type Alert, type DoseLog, type Medicine, type Patient, type User,
 } from "@/lib/api";
 import AddMedicine from "./add-medicine";
 import CameraTest from "./camera-test";
 
-const DOCTOR_ID = 1;
+const SAVED = "thuoc-doctor"; // localStorage key: stay logged in across reloads
 const POLL_MS = 3000;
 const LOW = 5; // matches the backend's low-pill rule; display only
 const FULL = 30; // meter scale
@@ -30,6 +30,53 @@ const ALERT_LABEL: Record<Alert["type"], string> = {
 };
 
 export default function Dashboard() {
+  const [doctor, setDoctor] = useState<User | null | undefined>(undefined); // undefined: not read yet
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try { setDoctor(JSON.parse(localStorage.getItem(SAVED) ?? "null")); } catch { setDoctor(null); }
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
+  function save(d: User | null) {
+    try { localStorage.setItem(SAVED, JSON.stringify(d)); } catch {}
+    setDoctor(d);
+  }
+  if (doctor === undefined) return null;
+  if (!doctor) return <Login onLogin={save} />;
+  return <DoctorView doctor={doctor} onLogout={() => save(null)} />;
+}
+
+function Login({ onLogin }: { onLogin: (d: User) => void }) {
+  const [email, setEmail] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    try {
+      const u = await api<User>("/login", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }),
+      });
+      if (u.role !== "doctor") return setError("This page is for doctors. Patients and family use the phone app.");
+      onLogin(u);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  return (
+    <form className="panel login" onSubmit={submit}>
+      <h1>ThuocTracker</h1>
+      <label className="field">Email
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
+      </label>
+      <button type="submit" className="btn btn-primary">Log in</button>
+      {error && <p className="form-error" role="alert">{error}</p>}
+    </form>
+  );
+}
+
+function DoctorView({ doctor, onLogout }: { doctor: User; onLogout: () => void }) {
   const [data, setData] = useState<Data | null>(null);
   const [online, setOnline] = useState(true);
   const [selected, setSelected] = useState<number | null>(null);
@@ -41,10 +88,11 @@ export default function Dashboard() {
   // shortcut: refetches everything every 3 s; fine for a few demo patients, use /alerts?since= at scale
   const load = useCallback(async () => {
     try {
-      const [patients, alerts] = await Promise.all([
-        api<Patient[]>(`/patients?doctor_id=${DOCTOR_ID}`),
+      const [patients, allAlerts] = await Promise.all([
+        api<Patient[]>(`/patients?doctor_id=${doctor.id}`),
         api<Alert[]>("/alerts"),
       ]);
+      const alerts = allAlerts.filter((a) => patients.some((p) => p.id === a.patient_id)); // only this doctor's patients
       const per = await Promise.all(patients.map((p) => Promise.all([
         api<Medicine[]>(`/patients/${p.id}/medicines`),
         api<DoseLog[]>(`/patients/${p.id}/doses`),
@@ -69,7 +117,7 @@ export default function Dashboard() {
     } catch {
       setOnline(false);
     }
-  }, []);
+  }, [doctor.id]);
 
   useEffect(() => {
     const first = setTimeout(() => {
@@ -98,7 +146,7 @@ export default function Dashboard() {
         <div className="brand">
           <span className="logo"><Logo /></span>
           <h1>ThuocTracker</h1>
-          <small>Doctor portal</small>
+          <small>{doctor.name}</small>
         </div>
         <div className={`live${online ? "" : " down"}`} role="status">
           <span className="dot" aria-hidden="true" />
@@ -113,6 +161,7 @@ export default function Dashboard() {
         <button className="btn btn-sm btn-ghost-light" type="button" onClick={resetDemo} title="Reload sample patients">
           Reset demo
         </button>
+        <button className="btn btn-sm btn-ghost-light" type="button" onClick={onLogout}>Log out</button>
       </header>
 
       {!online && (
@@ -213,7 +262,7 @@ function PatientView({ patient, meds, doses, onAdd, onChange }: {
       <div className="patient-head">
         <div>
           <h2>{patient.name}</h2>
-          <div className="meta">Age {patient.age} · Patient {patient.phone} · Family {patient.family_phone}</div>
+          <div className="meta">Age {patient.age} · {patient.email}</div>
         </div>
         <div className="actions">
           <button type="button" className="btn btn-primary" onClick={onAdd} disabled={!firstFree}>

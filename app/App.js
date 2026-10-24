@@ -3,33 +3,36 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { api } from './src/api';
-import DoctorHome from './src/DoctorHome';
+import Chat from './src/Chat';
 import { useNotifyNew, usePoll } from './src/hooks';
 import Login from './src/Login';
 import { onBanner, setupNotifications } from './src/notify';
 import PatientView from './src/PatientView';
-import { colors } from './src/ui';
+import People from './src/People';
+import { colors, Tabs } from './src/ui';
 
 export default function App() {
   const [user, setUser] = useState(null);
-  const [openPatient, setOpenPatient] = useState(null); // doctor drilled into a patient
+  const [other, setOther] = useState(null); // person being chatted with
 
-  useEffect(() => { if (user) setupNotifications(user.role, user.id); }, [user]);
+  useEffect(() => { if (user) setupNotifications(user.id); }, [user]);
 
-  const logout = () => { setUser(null); setOpenPatient(null); };
-  let title = 'ThuocTracker';
+  const logout = () => { setUser(null); setOther(null); };
+  // the patient whose "Today" this user can see: their own, their family member's, or the one the doctor opened
+  const patientId = user?.role === 'patient' ? user.id : user?.role === 'family' ? user.patient_id
+    : other?.role === 'patient' ? other.id : null;
+
   let body = <Login onLogin={setUser} />;
-  let back = null;
-  if (user?.role === 'doctor' && openPatient) {
-    title = openPatient.name;
-    back = () => setOpenPatient(null);
-    body = <PatientView user={user} patientId={openPatient.id} />;
-  } else if (user?.role === 'doctor') {
-    title = user.name;
-    body = <DoctorHome user={user} onOpen={setOpenPatient} />;
+  if (other) {
+    const chat = <Chat user={user} other={other} />;
+    body = user.role === 'doctor' && patientId
+      ? <Switcher tabs={{ Chat: chat, Today: <PatientView user={user} patientId={patientId} /> }} />
+      : chat;
   } else if (user) {
-    title = user.role === 'patient' ? `Hi, ${user.name}` : `${user.name}`;
-    body = <PatientView user={user} patientId={user.patientId} />;
+    const people = <People user={user} onOpen={setOther} />;
+    body = patientId
+      ? <Switcher tabs={{ People: people, Today: <PatientView user={user} patientId={patientId} /> }} />
+      : people;
   }
 
   return (
@@ -37,10 +40,10 @@ export default function App() {
       <SafeAreaView style={s.screen} edges={['top', 'bottom']}>
         {user && (
           <View style={s.header}>
-            <Pressable onPress={back || logout} hitSlop={12}>
-              <Text style={s.headerBtn}>{back ? '‹ Back' : 'Log out'}</Text>
+            <Pressable onPress={other ? () => setOther(null) : logout} hitSlop={12}>
+              <Text style={s.headerBtn}>{other ? '‹ Back' : 'Log out'}</Text>
             </Pressable>
-            <Text style={s.headerTitle} numberOfLines={1}>{title}</Text>
+            <Text style={s.headerTitle} numberOfLines={1}>{other ? other.name : user.name}</Text>
             <View style={{ width: 60 }} />
           </View>
         )}
@@ -50,6 +53,17 @@ export default function App() {
         <StatusBar style="dark" />
       </SafeAreaView>
     </SafeAreaProvider>
+  );
+}
+
+function Switcher({ tabs }) {
+  const names = Object.keys(tabs);
+  const [tab, setTab] = useState(names[0]);
+  return (
+    <View style={{ flex: 1 }}>
+      <Tabs tabs={names} value={tab} onChange={setTab} />
+      {tabs[tab]}
+    </View>
   );
 }
 
@@ -80,21 +94,18 @@ function Watcher({ user }) {
 
 async function collectEvents(user) {
   const out = [];
-  const pids = user.role === 'doctor' ? (await api.patients(user.id)).map((p) => p.id) : [user.patientId];
+  const [people, messages] = await Promise.all([api.contacts(user.id), api.messages(user.id)]);
+  const nameOf = Object.fromEntries(people.map((p) => [p.id, p.name]));
+  for (const m of messages) {
+    if (m.to_id === user.id) out.push({ id: `m${m.id}`, title: nameOf[m.from_id] ?? 'Message', body: m.text });
+  }
   if (user.role !== 'patient') {
-    const to = user.role === 'doctor' ? 'doctor' : 'family';
+    const pids = user.role === 'doctor' ? people.filter((p) => p.role === 'patient').map((p) => p.id) : [user.patient_id];
     for (const a of await api.alerts()) {
-      if (a.to === to && pids.includes(a.patient_id)) out.push({ id: `a${a.id}`, title: 'ThuocTracker', body: a.message });
+      if (a.to === user.role && pids.includes(a.patient_id)) out.push({ id: `a${a.id}`, title: 'ThuocTracker', body: a.message });
     }
-  }
-  for (const pid of pids) {
-    for (const m of await api.messages(pid)) {
-      if (m.sender === user.role && m.sender_name === user.name) continue;
-      out.push({ id: `m${m.id}`, title: m.sender_name, body: m.text });
-    }
-  }
-  if (user.role === 'patient') {
-    const c = await api.cabinetState(user.patientId);
+  } else {
+    const c = await api.cabinetState(user.id);
     if (c.mode === 'take') out.push({ id: `d${c.dose_id}`, title: 'Pill time', body: c.message });
   }
   return out;

@@ -90,14 +90,18 @@ The Pi and the cabinet screen both poll. If they share one route, whoever reads 
 
 `open_slot` is optional: a command without it (e.g. `{"dose_id": 7, "say_url": null, "sound": "missed"}`) only plays audio. The same dose can arrive again as a repeat reminder. `sound` is one of `time_for_pill`, `good_job`, `already_took`, `missed`. If `say_url` fails to download, the Pi plays its stored file with that name.
 
-### Mobile app: chat + push (Minh Dau)
+### Accounts, chat + push
+
+Data lives in Tiger Data (Postgres, `DATABASE_URL` in `.env`). One `users` table: each account has one role. Patient: `age`, `doctor_id`. Family: `patient_id`. Demo emails: `doctor@demo.com`, `lan@demo.com` (patient 1), `minh@demo.com` (Lan's family).
 
 | Route | Returns |
 |---|---|
+| `POST /login` body `{email}` | the `User` (`Doctor` / `Patient` / `Family`, by `role`), 404 if no account |
+| `GET /users/{id}/contacts` | `[User]` assigned to them. Doctor: their patients + those patients' family. Patient: doctor + family. Family: patient + doctor |
+| `GET /users/{id}/messages?with_id=&since=` | `[Message]` `{id, from_id, to_id, text, at}` oldest first (all of theirs, or only with `with_id`) |
+| `POST /users/{id}/messages` body `{to_id, text}` | `Message`; 403 if `to_id` is not one of their contacts; pushes to `to_id` |
+| `POST /push/register` | body `{user_id, token}` (Expo push token) |
 | `GET /doctors` | `[Doctor]` |
-| `GET /patients/{id}/messages?since=<iso>` | `[Message]` oldest first. One chat per patient: patient + family + doctor |
-| `POST /patients/{id}/messages` | body `{patient_id, sender: "patient"\|"family"\|"doctor", sender_name, text}` → `Message` with `id`, `at`; pushes to the other two roles |
-| `POST /push/register` | body `{role, user_id, token}` (Expo push token; `user_id` = patient id for patient/family, doctor id for doctor) |
 
 Every alert now goes to the app (dashboard + push to that role's phones) **and** by SMS. Pill time pushes to the patient's phone too.
 

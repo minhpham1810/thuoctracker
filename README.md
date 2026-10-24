@@ -119,7 +119,7 @@ Dashboard `http://localhost:3000/doctor`, cabinet `http://<laptop-ip>:3000/cabin
 cd app && npx expo start          # or: npx expo start --tunnel   if the phone can't load it
 ```
 
-Install **Expo Go** on the phone, scan the QR code (iPhone: Camera app; Android: inside Expo Go). On the login screen enter `http://<laptop-ip>:8000`, pick a role. Check the phone can reach the backend by opening `http://<laptop-ip>:8000/health` in its browser. Allow Python and Node through Windows Firewall when asked.
+Install **Expo Go** on the phone, scan the QR code (iPhone: Camera app; Android: inside Expo Go). On the login screen enter `http://<laptop-ip>:8000` and an email: `lan@demo.com` (patient), `minh@demo.com` (family) or `doctor@demo.com` (doctor). On a computer, `npx expo start --web` runs the same app in the browser. Check the phone can reach the backend by opening `http://<laptop-ip>:8000/health` in its browser. Allow Python and Node through Windows Firewall when asked.
 
 Notifications: in Expo Go they show while the app is running. Real push needs `npx eas init` in `app/` (Expo account), and on Android a development build (`npx eas build --profile development --platform android`).
 

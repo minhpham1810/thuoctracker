@@ -3,3 +3,5 @@ uvicorn[standard]
 python-multipart
 python-dotenv
 requests
+psycopg[binary]
+psycopg_pool

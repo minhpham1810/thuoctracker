@@ -1,22 +1,10 @@
-import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { api, day, hhmm } from './api';
-import Chat from './Chat';
 import { usePoll } from './hooks';
-import { Card, colors, Dot, Pill, statusColor, Tabs, Title } from './ui';
+import { Card, colors, Dot, Pill, statusColor, Title } from './ui';
 
-// One patient's care page. The patient sees it big and simple; family and doctor also see alerts.
+// "Today" for one patient: pill-time banner, medicines, alerts (family only), dose history.
 export default function PatientView({ user, patientId }) {
-  const [tab, setTab] = useState('Today');
-  return (
-    <View style={{ flex: 1 }}>
-      <Tabs tabs={['Today', 'Chat']} value={tab} onChange={setTab} />
-      {tab === 'Today' ? <Overview user={user} patientId={patientId} /> : <Chat user={user} patientId={patientId} />}
-    </View>
-  );
-}
-
-function Overview({ user, patientId }) {
   const [data, error] = usePoll(async () => {
     const [meds, doses, alerts, cabinet] = await Promise.all([
       api.medicines(patientId), api.doses(patientId), api.alerts(), api.cabinetState(patientId)]);

@@ -1,23 +1,36 @@
 """Shared data contract. Everyone uses these names (agreed in Hour 0)."""
 from datetime import date, datetime
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional, Union
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+Role = Literal["patient", "family", "doctor"]
 
 
-class Doctor(BaseModel):
+class User(BaseModel):
+    """One account = one role. Log in by email."""
     id: Optional[int] = None
+    email: str
     name: str
-    phone: Optional[str] = None
+    role: Role
 
 
-class Patient(BaseModel):
-    id: Optional[int] = None
-    name: str
+class Doctor(User):
+    role: Literal["doctor"] = "doctor"
+
+
+class Patient(User):
+    role: Literal["patient"] = "patient"
     age: int
     doctor_id: int
-    phone: str  # pill-time reminder texts
-    family_phone: str
+
+
+class Family(User):
+    role: Literal["family"] = "family"
+    patient_id: int  # whose family
+
+
+AnyUser = Annotated[Union[Doctor, Patient, Family], Field(discriminator="role")]
 
 
 class Medicine(BaseModel):
@@ -41,22 +54,17 @@ class DoseLog(BaseModel):
     method: Optional[Literal["camera", "screen"]] = None
 
 
-Role = Literal["patient", "family", "doctor"]
-
-
 class Message(BaseModel):
-    """Chat line. One chat per patient: the patient, their family and their doctor."""
+    """1:1 chat line between two people assigned to each other (see contacts in main.py)."""
     id: Optional[int] = None
-    patient_id: int
-    sender: Role
-    sender_name: str
+    from_id: Optional[int] = None  # set by the backend from the URL
+    to_id: int
     text: str
     at: Optional[datetime] = None  # set by the backend
 
 
 class PushToken(BaseModel):
-    """Expo push token from the mobile app. user_id is the patient id for patient/family, doctor id for doctor."""
-    role: Role
+    """Expo push token from the mobile app."""
     user_id: int
     token: str
 

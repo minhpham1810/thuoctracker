@@ -141,6 +141,7 @@ label.field small { font-weight: 400; color: var(--muted); }
 .note { font-size: .875rem; color: var(--muted); }
 .note.ai { color: var(--primary-strong); font-weight: 500; }
 .form-error { color: var(--bad); font-weight: 500; }
+.login { max-width: 360px; margin: 15vh auto 0; display: grid; gap: 14px; }
 
 @media (max-width: 1200px) {
   .layout { grid-template-columns: 260px minmax(0, 1fr); }

@@ -2,8 +2,8 @@
 
 Run: uvicorn backend.main:app --reload --host 0.0.0.0   (from repo root). Web pages: Next.js in web/ (port 3000).
 
-Routes and response shapes follow the contract in TEAM.md. Data is in memory and
-seeded with sample patients; AI routes fall back to fake answers if ai/ fails.
+Routes and response shapes follow the contract in TEAM.md. Data lives in Tiger Data (Postgres, see db.py),
+seeded with sample users on first start; AI routes fall back to fake answers if ai/ fails.
 """
 import asyncio
 import hashlib
@@ -13,12 +13,15 @@ from datetime import date, datetime, time, timedelta
 from typing import Literal, Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pydantic import TypeAdapter
 
 import ai
 
-from .models import Alert, Doctor, DoseLog, Medicine, Message, Patient, PushToken, Role
+from .db import SCHEMA, pool, q, q1
+from .models import Alert, AnyUser, Doctor, DoseLog, Medicine, Message, Patient, PushToken, Role
 from .push import send_push
 
 load_dotenv()
@@ -29,95 +32,148 @@ TICK_SECONDS = 2
 AUDIO_DIR = "audio"  # MP3s from ai.speak(), served at /audio/
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
+# Not in the DB on purpose: Pi command queue, cabinet screen state, photo counts, reminder times,
+# alerts already sent. All of it is about the dose happening right now.
+mem: dict = {}
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    q(SCHEMA)
+    if q1("SELECT 1 FROM users LIMIT 1") is None:
+        seed()
+    else:
+        # a restart (or --reload) must not re-send alerts for conditions that were already alerted
+        today = date.today()
+        meds = all_medicines()
+        reset_mem({("low_pills", m.id) for m in meds if m.pills_left < 5}
+                  | {("expiring_soon", m.id) for m in meds if m.expiration - today <= timedelta(days=7)})
     task = asyncio.create_task(scheduler())
     yield
     task.cancel()
+    pool.close()  # else --reload waits 5 s on the pool's threads
 
 
 app = FastAPI(title="ThuocTracker", lifespan=lifespan)
-
-# shortcut: in-memory store, swap for SQLite if we need data to survive restarts
-db: dict = {}
-# (role, user_id) -> Expo push tokens. Outside db so /demo/reset keeps phones registered.
-push_tokens: dict[tuple[str, int], set[str]] = {}
+# the Expo app in a computer's browser (doctor) calls the API from another origin
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
-def seed():
-    today = date.today()
-    now = datetime.now()
-    db.clear()
-    db.update(
-        doctors=[Doctor(id=1, name="Dr. Nguyen")],
-        patients=[
-            Patient(id=1, name="Grandma Lan", age=78, doctor_id=1,
-                    phone="+12723059760", family_phone="+12727881514"),  # real phones for the demo
-            Patient(id=2, name="Mr. Tran", age=82, doctor_id=1,
-                    phone="+15550000003", family_phone="+15550000004"),
-            Patient(id=3, name="Mrs. Hoa", age=74, doctor_id=1,
-                    phone="+15550000005", family_phone="+15550000006"),
-        ],
-        medicines=[
-            Medicine(id=1, patient_id=1, name="Aspirin", dose="1 pill", times=["08:00", "20:00"],
-                     slot=1, pills_left=10, expiration=today + timedelta(days=90), color="blue"),
-            Medicine(id=2, patient_id=1, name="Metformin", dose="1 pill", times=["12:00"],
-                     slot=2, pills_left=4, expiration=today + timedelta(days=5), color="red"),
-            Medicine(id=3, patient_id=2, name="Lisinopril", dose="1 pill", times=["09:00"],
-                     slot=1, pills_left=20, expiration=today + timedelta(days=200), color="yellow"),
-            Medicine(id=4, patient_id=3, name="Atorvastatin", dose="1 pill", times=["21:00"],
-                     slot=1, pills_left=15, expiration=today + timedelta(days=120), color="white"),
-        ],
-        doses=[
-            DoseLog(id=1, medicine_id=1, due_at=now - timedelta(hours=12),
-                    taken_at=now - timedelta(hours=12, minutes=-3), status="taken", method="camera"),
-            DoseLog(id=2, medicine_id=2, due_at=now - timedelta(hours=24), status="missed"),
-        ],
-        alerts=[
-            Alert(id=1, type="missed", to="family", patient_id=1,
-                  message="Grandma Lan missed Metformin (12:00).", at=now - timedelta(hours=23)),
-            Alert(id=2, type="low_pills", to="doctor", patient_id=1,
-                  message="Grandma Lan has 4 Metformin left. Refill needed.", at=now - timedelta(hours=1)),
-        ],
-        messages=[
-            Message(id=1, patient_id=1, sender="family", sender_name="Minh (grandson)",
-                    text="Dr. Nguyen, Grandma seems tired after the new Metformin.", at=now - timedelta(hours=3)),
-            Message(id=2, patient_id=1, sender="doctor", sender_name="Dr. Nguyen",
-                    text="Thanks for telling me. Let's talk at her visit on Friday.", at=now - timedelta(hours=2)),
-        ],
+def reset_mem(sent: set):
+    mem.clear()
+    mem.update(
         commands={},  # patient_id -> list of pending Pi commands
         state={},     # patient_id -> what the cabinet screen shows
         counts={},    # dose_id -> {"before": n, "after": n}
         reminded={},  # dose_id -> last reminder time
-        sent={("low_pills", 2)},  # (alert type, medicine_id) already alerted; seed alert above
-        last_tick=now,
+        sent=sent,    # (alert type, medicine_id) already alerted
+        last_tick=datetime.now(),
     )
 
 
-seed()
+def seed():
+    """Wipe the DB and load the demo people. Log in with any of these emails."""
+    today = date.today()
+    now = datetime.now()
+    with pool.connection() as c, c.transaction():
+        c.execute("TRUNCATE users, medicines, doses, alerts, messages RESTART IDENTITY CASCADE")
+        cur = c.cursor()
+        # patients keep ids 1-3: the cabinet screen and the Pi use ?patient=1. Doctor first so FKs resolve.
+        cur.executemany(
+            "INSERT INTO users (id, email, name, role, age, doctor_id, patient_id) VALUES (%s, %s, %s, %s, %s, %s, %s)", [
+                (4, "doctor@demo.com", "Dr. Nguyen", "doctor", None, None, None),
+                (1, "lan@demo.com", "Grandma Lan", "patient", 78, 4, None),
+                (2, "tran@demo.com", "Mr. Tran", "patient", 82, 4, None),
+                (3, "hoa@demo.com", "Mrs. Hoa", "patient", 74, 4, None),
+                (5, "minh@demo.com", "Minh (grandson)", "family", None, None, 1),
+                (6, "anh@demo.com", "Anh (son)", "family", None, None, 2),
+            ])
+        c.execute("SELECT setval('users_id_seq', (SELECT max(id) FROM users))")
+        # RESTART IDENTITY: these get ids 1-4 in order
+        cur.executemany(
+            "INSERT INTO medicines (patient_id, name, dose, times, slot, pills_left, expiration, color)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s)", [
+                (1, "Aspirin", "1 pill", ["08:00", "20:00"], 1, 10, today + timedelta(days=90), "blue"),
+                (1, "Metformin", "1 pill", ["12:00"], 2, 4, today + timedelta(days=5), "red"),
+                (2, "Lisinopril", "1 pill", ["09:00"], 1, 20, today + timedelta(days=200), "yellow"),
+                (3, "Atorvastatin", "1 pill", ["21:00"], 1, 15, today + timedelta(days=120), "white"),
+            ])
+        cur.executemany(
+            "INSERT INTO doses (medicine_id, due_at, taken_at, status, method) VALUES (%s, %s, %s, %s, %s)", [
+                (1, now - timedelta(hours=12), now - timedelta(hours=12, minutes=-3), "taken", "camera"),
+                (2, now - timedelta(hours=24), None, "missed", None),
+            ])
+        cur.executemany(
+            'INSERT INTO alerts (type, "to", patient_id, message, at) VALUES (%s, %s, %s, %s, %s)', [
+                ("missed", "family", 1, "Grandma Lan missed Metformin (12:00).", now - timedelta(hours=23)),
+                ("low_pills", "doctor", 1, "Grandma Lan has 4 Metformin left. Refill needed.", now - timedelta(hours=1)),
+            ])
+        cur.executemany("INSERT INTO messages (from_id, to_id, text, at) VALUES (%s, %s, %s, %s)", [
+            (5, 4, "Dr. Nguyen, Grandma seems tired after the new Metformin.", now - timedelta(hours=3)),
+            (4, 5, "Thanks for telling me. Let's talk at her visit on Friday.", now - timedelta(hours=2)),
+        ])
+    reset_mem({("low_pills", 2)})  # the seeded low_pills alert above
 
 
-def next_id(table: str) -> int:
-    return max((row.id for row in db[table]), default=0) + 1
+# --- Reads ---------------------------------------------------------------------
+as_user = TypeAdapter(AnyUser).validate_python
 
 
-def find(table: str, id: int):
-    for row in db[table]:
-        if row.id == id:
-            return row
-    raise HTTPException(404, f"{table[:-1]} {id} not found")
+def get_user(user_id: int):
+    row = q1("SELECT * FROM users WHERE id = %s", user_id)
+    if not row:
+        raise HTTPException(404, f"user {user_id} not found")
+    return as_user(row)
 
 
+def get_patient(patient_id: int) -> Patient:
+    u = get_user(patient_id)
+    if u.role != "patient":
+        raise HTTPException(404, f"patient {patient_id} not found")
+    return u
+
+
+def get_medicine(medicine_id: int) -> Medicine:
+    row = q1("SELECT * FROM medicines WHERE id = %s", medicine_id)
+    if not row:
+        raise HTTPException(404, f"medicine {medicine_id} not found")
+    return Medicine(**row)
+
+
+def get_dose(dose_id: int) -> DoseLog:
+    row = q1("SELECT * FROM doses WHERE id = %s", dose_id)
+    if not row:
+        raise HTTPException(404, f"dose {dose_id} not found")
+    return DoseLog(**row)
+
+
+def all_medicines() -> list[Medicine]:
+    return [Medicine(**r) for r in q("SELECT * FROM medicines ORDER BY id")]
+
+
+def contacts(u) -> list:
+    """People assigned to u: doctor -> their patients + those patients' families;
+    patient -> their doctor + family; family -> their patient + that patient's doctor."""
+    if u.role == "doctor":
+        rows = q("SELECT * FROM users WHERE doctor_id = %s"
+                 " OR patient_id IN (SELECT id FROM users WHERE doctor_id = %s) ORDER BY id", u.id, u.id)
+    elif u.role == "patient":
+        rows = q("SELECT * FROM users WHERE id = %s OR patient_id = %s ORDER BY id", u.doctor_id, u.id)
+    else:
+        rows = q("SELECT * FROM users WHERE id = %s OR id = (SELECT doctor_id FROM users WHERE id = %s)"
+                 " ORDER BY id", u.patient_id, u.patient_id)
+    return [as_user(r) for r in rows]
+
+
+# --- Cabinet + alerts ----------------------------------------------------------
 def idle_state() -> dict:
     return {"mode": "idle", "dose_id": None, "slot": None, "medicine": None,
             "color": None, "message": "ThuocTracker"}
 
 
-def set_state(patient_id: int, mode: str, dose: DoseLog, message: str):
-    m = find("medicines", dose.medicine_id)
-    db["state"][patient_id] = {"mode": mode, "dose_id": dose.id, "slot": m.slot,
-                               "medicine": m.name, "color": m.color, "message": message}
+def set_state(patient_id: int, mode: str, dose: DoseLog, m: Medicine, message: str):
+    mem["state"][patient_id] = {"mode": mode, "dose_id": dose.id, "slot": m.slot,
+                                "medicine": m.name, "color": m.color, "message": message}
 
 
 _unset = object()
@@ -155,112 +211,121 @@ def say(patient_id: int, dose: DoseLog, text: str, sound: str, open_slot: Option
     push_command(patient_id, cmd)
 
 
-def mark_taken(dose: DoseLog, method: Literal["camera", "screen"]):
-    m = find("medicines", dose.medicine_id)
-    if dose.status == "taken":
-        set_state(m.patient_id, "already_took", dose, "You already took this one.")
+def mark_taken(dose: DoseLog, method: Literal["camera", "screen"]) -> DoseLog:
+    m = get_medicine(dose.medicine_id)
+    # conditional update: the scheduler may be marking it missed at the same moment
+    row = q1("UPDATE doses SET status = 'taken', taken_at = %s, method = %s"
+             " WHERE id = %s AND status <> 'taken' RETURNING *", datetime.now(), method, dose.id)
+    if not row:
+        set_state(m.patient_id, "already_took", dose, m, "You already took this one.")
         say(m.patient_id, dose, "You already took this one.", "already_took")
-        return
-    dose.status, dose.taken_at, dose.method = "taken", datetime.now(), method
+        return get_dose(dose.id)
+    q("UPDATE medicines SET pills_left = GREATEST(pills_left - 1, 0) WHERE id = %s", m.id)
     drop_door_commands(m.patient_id, dose.id)
-    m.pills_left = max(m.pills_left - 1, 0)
-    set_state(m.patient_id, "taken", dose, "Good job!")
+    set_state(m.patient_id, "taken", dose, m, "Good job!")
     say(m.patient_id, dose, "Good job!", "good_job")
+    return DoseLog(**row)
 
 
 def push_command(patient_id: int, cmd: dict):
-    db["commands"].setdefault(patient_id, []).append(cmd)
+    mem["commands"].setdefault(patient_id, []).append(cmd)
 
 
 def door_queued(patient_id: int, dose_id: int) -> bool:
-    return any(c["dose_id"] == dose_id and "open_slot" in c for c in db["commands"].get(patient_id, []))
+    return any(c["dose_id"] == dose_id and "open_slot" in c for c in mem["commands"].get(patient_id, []))
 
 
 def drop_door_commands(patient_id: int, dose_id: int):
     """Dose is settled: queued reminders must not reopen the door."""
-    queue = db["commands"].get(patient_id, [])
+    queue = mem["commands"].get(patient_id, [])
     queue[:] = [c for c in queue if not (c["dose_id"] == dose_id and "open_slot" in c)]
 
 
 def dose_log(patient_id: int) -> list[dict]:
     """Dose log in the shape ai.answer() expects (see TEAM.md)."""
-    names = {m.id: m.name for m in db["medicines"]}
-    return [{"medicine": names[d.medicine_id], "due_at": d.due_at.isoformat(), "status": d.status,
-             "taken_at": d.taken_at.isoformat() if d.taken_at else None}
-            for d in patient_doses(patient_id)]
+    rows = q("SELECT m.name, d.due_at, d.status, d.taken_at FROM doses d JOIN medicines m ON m.id = d.medicine_id"
+             " WHERE m.patient_id = %s ORDER BY d.due_at DESC", patient_id)
+    return [{"medicine": r["name"], "due_at": r["due_at"].isoformat(), "status": r["status"],
+             "taken_at": r["taken_at"].isoformat() if r["taken_at"] else None} for r in rows]
+
+
+def push_users(user_ids: list[int], title: str, body: str, data: dict):
+    tokens = [r["token"] for r in q("SELECT token FROM push_tokens WHERE user_id = ANY(%s) ORDER BY token", user_ids)]
+    send_push(tokens, title, body, data)
 
 
 def push_to(role: Role, p: Patient, title: str, body: str):
     """Push to the phones of `role` in patient p's care circle."""
-    user_id = p.doctor_id if role == "doctor" else p.id
-    send_push(sorted(push_tokens.get((role, user_id), ())), title, body, {"patient_id": p.id})
+    if role == "family":
+        ids = [r["id"] for r in q("SELECT id FROM users WHERE patient_id = %s", p.id)]
+    else:
+        ids = [p.doctor_id if role == "doctor" else p.id]
+    push_users(ids, title, body, {"patient_id": p.id})
 
 
 def add_alert(type: str, to: Literal["doctor", "family"], p: Patient, message: str):
     """Every alert goes to the dashboard and by push to that role's phones."""
-    db["alerts"].append(Alert(id=next_id("alerts"), type=type, to=to, patient_id=p.id,
-                              message=message, at=datetime.now()))
+    q('INSERT INTO alerts (type, "to", patient_id, message, at) VALUES (%s, %s, %s, %s, %s)',
+      type, to, p.id, message, datetime.now())
     push_to(to, p, "ThuocTracker", message)
 
 
 def remind(dose: DoseLog, m: Medicine):
-    db["reminded"][dose.id] = datetime.now()
+    mem["reminded"][dose.id] = datetime.now()
     if door_queued(m.patient_id, dose.id):  # Pi hasn't picked up the last one yet (door cycle > repeat time)
         return
     say(m.patient_id, dose, f"Time for your {m.color} pill, {m.name}.", "time_for_pill", open_slot=m.slot)
-    set_state(m.patient_id, "take", dose, f"Take your {m.color} pill now ({m.name})")
+    set_state(m.patient_id, "take", dose, m, f"Take your {m.color} pill now ({m.name})")
 
 
 def start_dose(m: Medicine, due_at: datetime) -> DoseLog:
-    dose = DoseLog(id=next_id("doses"), medicine_id=m.id, due_at=due_at)
-    db["doses"].append(dose)
+    dose = DoseLog(**q1("INSERT INTO doses (medicine_id, due_at) VALUES (%s, %s) RETURNING *", m.id, due_at))
     remind(dose, m)
-    p = find("patients", m.patient_id)
-    text = f"Time for your {m.color} pill ({m.name})."
-    push_to("patient", p, "Pill time", text)
+    push_to("patient", get_patient(m.patient_id), "Pill time", f"Time for your {m.color} pill ({m.name}).")
     return dose
 
 
 def tick():
     """One scheduler pass: start due doses, remind, mark missed, low/expiring alerts."""
     now = datetime.now()
-    last, db["last_tick"] = db["last_tick"], now
-    for m in list(db["medicines"]):
-        p = find("patients", m.patient_id)
+    last, mem["last_tick"] = mem["last_tick"], now
+    patients = {p.id: p for p in list_patients()}
+    meds = {m.id: m for m in all_medicines()}
+    for m in meds.values():
+        p = patients[m.patient_id]
         for t in m.times:
             due = datetime.combine(now.date(), time.fromisoformat(t))
             if last < due <= now:
                 start_dose(m, due)
         low = ("low_pills", m.id)
-        if m.pills_left < 5 and low not in db["sent"]:
-            db["sent"].add(low)
+        if m.pills_left < 5 and low not in mem["sent"]:
+            mem["sent"].add(low)
             add_alert("low_pills", "doctor", p, f"{p.name} has {m.pills_left} {m.name} left. Refill needed.")
             add_alert("low_pills", "family", p, f"{p.name} has only {m.pills_left} {m.name} left.")
         elif m.pills_left >= 5:
-            db["sent"].discard(low)  # refilled; alert again next time it runs low
+            mem["sent"].discard(low)  # refilled; alert again next time it runs low
         expiring = ("expiring_soon", m.id)
-        if m.expiration - now.date() <= timedelta(days=7) and expiring not in db["sent"]:
-            db["sent"].add(expiring)
+        if m.expiration - now.date() <= timedelta(days=7) and expiring not in mem["sent"]:
+            mem["sent"].add(expiring)
             add_alert("expiring_soon", "family", p, f"{p.name}'s {m.name} expires on {m.expiration}.")
-    for d in db["doses"]:
-        if d.status != "pending":
-            continue
-        m = find("medicines", d.medicine_id)
+    for d in [DoseLog(**r) for r in q("SELECT * FROM doses WHERE status = 'pending'")]:
+        m = meds[d.medicine_id]
         if now - d.due_at >= MISSED_AFTER:
-            d.status = "missed"
-            p = find("patients", m.patient_id)
+            if not q("UPDATE doses SET status = 'missed' WHERE id = %s AND status = 'pending' RETURNING id", d.id):
+                continue  # taken in the meantime
+            p = patients[m.patient_id]
             drop_door_commands(p.id, d.id)
-            set_state(p.id, "missed", d, "You missed your pill.")
+            set_state(p.id, "missed", d, m, "You missed your pill.")
             say(p.id, d, "You missed your pill.", "missed")
             add_alert("missed", "family", p, f"{p.name} missed {m.name} ({d.due_at:%H:%M}).")
-        elif now - db["reminded"].get(d.id, d.due_at) >= REMIND_EVERY:
+        elif now - mem["reminded"].get(d.id, d.due_at) >= REMIND_EVERY:
             remind(d, m)
 
 
 async def scheduler():
     while True:
         try:
-            await asyncio.to_thread(tick)  # to_thread: push calls block
+            await asyncio.to_thread(tick)  # to_thread: DB and push calls block
         except Exception as e:
             print(f"[scheduler] {e!r}")
         await asyncio.sleep(TICK_SECONDS)
@@ -271,83 +336,113 @@ def health():
     return {"ok": True}
 
 
+# --- Accounts ------------------------------------------------------------------
+@app.post("/login")
+def login(email: str = Body(embed=True)) -> AnyUser:
+    """Email only, no password (demo)."""
+    row = q1("SELECT * FROM users WHERE lower(email) = lower(%s)", email.strip())
+    if not row:
+        raise HTTPException(404, "No account with that email")
+    return as_user(row)
+
+
+@app.get("/users/{user_id}/contacts")
+def user_contacts(user_id: int) -> list[AnyUser]:
+    return contacts(get_user(user_id))
+
+
 # --- Data + doctor dashboard -------------------------------------------------
 @app.get("/patients")
 def list_patients(doctor_id: Optional[int] = None) -> list[Patient]:
-    return [p for p in db["patients"] if doctor_id is None or p.doctor_id == doctor_id]
+    rows = q("SELECT * FROM users WHERE role = 'patient' AND (%s::int IS NULL OR doctor_id = %s) ORDER BY id",
+             doctor_id, doctor_id)
+    return [Patient(**r) for r in rows]
 
 
 @app.post("/patients")
 def add_patient(p: Patient) -> Patient:
-    p.id = next_id("patients")
-    db["patients"].append(p)
-    return p
+    if get_user(p.doctor_id).role != "doctor":
+        raise HTTPException(400, f"user {p.doctor_id} is not a doctor")
+    if q1("SELECT 1 FROM users WHERE lower(email) = lower(%s)", p.email):
+        raise HTTPException(409, f"{p.email} already has an account")
+    row = q1("INSERT INTO users (email, name, role, age, doctor_id) VALUES (%s, %s, 'patient', %s, %s) RETURNING *",
+             p.email.strip(), p.name, p.age, p.doctor_id)
+    return Patient(**row)
 
 
 @app.get("/patients/{patient_id}/medicines")
 def patient_medicines(patient_id: int) -> list[Medicine]:
-    return [m for m in db["medicines"] if m.patient_id == patient_id]
+    return [Medicine(**r) for r in q("SELECT * FROM medicines WHERE patient_id = %s ORDER BY slot", patient_id)]
 
 
 @app.post("/medicines")
 def add_medicine(m: Medicine) -> Medicine:
-    find("patients", m.patient_id)
-    if any(x.patient_id == m.patient_id and x.slot == m.slot for x in db["medicines"]):
+    get_patient(m.patient_id)
+    if q1("SELECT 1 FROM medicines WHERE patient_id = %s AND slot = %s", m.patient_id, m.slot):
         raise HTTPException(409, f"slot {m.slot} already has a medicine")
-    m.id = next_id("medicines")
-    db["medicines"].append(m)
-    return m
+    row = q1("INSERT INTO medicines (patient_id, name, dose, times, slot, pills_left, expiration, color)"
+             " VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
+             m.patient_id, m.name, m.dose, m.times, m.slot, m.pills_left, m.expiration, m.color)
+    return Medicine(**row)
 
 
 @app.get("/patients/{patient_id}/doses")
 def patient_doses(patient_id: int) -> list[DoseLog]:
-    meds = {m.id for m in patient_medicines(patient_id)}
-    return sorted((d for d in db["doses"] if d.medicine_id in meds),
-                  key=lambda d: d.due_at, reverse=True)
+    rows = q("SELECT d.* FROM doses d JOIN medicines m ON m.id = d.medicine_id"
+             " WHERE m.patient_id = %s ORDER BY d.due_at DESC", patient_id)
+    return [DoseLog(**r) for r in rows]
 
 
 @app.post("/doses/{dose_id}/taken")
 def dose_taken(dose_id: int, method: Literal["camera", "screen"] = "screen") -> DoseLog:
-    dose = find("doses", dose_id)
-    mark_taken(dose, method)
-    return dose
+    return mark_taken(get_dose(dose_id), method)
 
 
 @app.get("/alerts")
 def list_alerts(since: Optional[datetime] = None) -> list[Alert]:
-    return [a for a in db["alerts"] if since is None or a.at > since]
+    rows = q('SELECT * FROM alerts WHERE %s::timestamp IS NULL OR at > %s ORDER BY id', since, since)
+    return [Alert(**r) for r in rows]
 
 
 @app.get("/doctors")
 def list_doctors() -> list[Doctor]:
-    return db["doctors"]
+    return [Doctor(**r) for r in q("SELECT * FROM users WHERE role = 'doctor' ORDER BY id")]
 
 
-# --- Mobile app: chat + push -------------------------------------------------
-@app.get("/patients/{patient_id}/messages")
-def list_messages(patient_id: int, since: Optional[datetime] = None) -> list[Message]:
-    """Chat for one patient's circle (patient, family, doctor), oldest first."""
-    find("patients", patient_id)
-    return [m for m in db["messages"] if m.patient_id == patient_id and (since is None or m.at > since)]
+# --- Mobile app: 1:1 chat + push ------------------------------------------------
+@app.get("/users/{user_id}/messages")
+def list_messages(user_id: int, with_id: Optional[int] = None, since: Optional[datetime] = None) -> list[Message]:
+    """Messages to or from user_id (only with with_id if given), oldest first."""
+    sql, args = "SELECT * FROM messages WHERE %s IN (from_id, to_id)", [user_id]
+    if with_id is not None:
+        sql += " AND %s IN (from_id, to_id)"
+        args.append(with_id)
+    if since is not None:
+        sql += " AND at > %s"
+        args.append(since)
+    return [Message(**r) for r in q(sql + " ORDER BY at, id", *args)]
 
 
-@app.post("/patients/{patient_id}/messages")
-def send_message(patient_id: int, msg: Message) -> Message:
-    p = find("patients", patient_id)
-    msg.id, msg.patient_id, msg.at = next_id("messages"), patient_id, datetime.now()
-    db["messages"].append(msg)
-    for role in ("patient", "family", "doctor"):
-        if role != msg.sender:
-            push_to(role, p, msg.sender_name, msg.text)
-    return msg
+@app.post("/users/{user_id}/messages")
+def send_message(user_id: int, msg: Message) -> Message:
+    me = get_user(user_id)
+    if msg.to_id not in {c.id for c in contacts(me)}:
+        raise HTTPException(403, "You can only message people assigned to you")
+    text = msg.text.strip()
+    if not text:
+        raise HTTPException(400, "Empty message")
+    row = q1("INSERT INTO messages (from_id, to_id, text, at) VALUES (%s, %s, %s, %s) RETURNING *",
+             me.id, msg.to_id, text, datetime.now())
+    push_users([msg.to_id], me.name, text, {"from_id": me.id})
+    return Message(**row)
 
 
 @app.post("/push/register")
 def register_push(t: PushToken):
-    """The app sends its Expo push token after the user picks who they are."""
-    for tokens in push_tokens.values():
-        tokens.discard(t.token)  # one phone = one identity (switching roles in the demo)
-    push_tokens.setdefault((t.role, t.user_id), set()).add(t.token)
+    """The app sends its Expo push token after login. One phone = one user (re-login moves it)."""
+    get_user(t.user_id)
+    q("INSERT INTO push_tokens (token, user_id) VALUES (%s, %s)"
+      " ON CONFLICT (token) DO UPDATE SET user_id = EXCLUDED.user_id", t.token, t.user_id)
     return {"ok": True}
 
 
@@ -364,7 +459,7 @@ def read_label(photo: UploadFile = File(...)):
 @app.post("/ai/ask")
 def ask(patient_id: int, audio: UploadFile = File(...)):
     """Question audio -> answer text + MP3 url, answered from the dose log."""
-    find("patients", patient_id)
+    get_patient(patient_id)
     question = try_ai(ai.transcribe, audio.file.read(), fallback="Did I take my pill today?")
     text = try_ai(ai.answer, question, dose_log(patient_id),
                   fallback="Sorry, I can't answer right now. Please check the screen.")
@@ -375,23 +470,23 @@ def ask(patient_id: int, audio: UploadFile = File(...)):
 @app.get("/cabinet/{patient_id}/command")
 def cabinet_command(patient_id: int):
     """Pi only. Each command is handed out once."""
-    queue = db["commands"].get(patient_id, [])
+    queue = mem["commands"].get(patient_id, [])
     return queue.pop(0) if queue else {}
 
 
 @app.get("/cabinet/{patient_id}/state")
 def cabinet_state(patient_id: int):
     """Cabinet screen only. Read-only, safe to poll."""
-    return db["state"].get(patient_id, idle_state())
+    return mem["state"].get(patient_id, idle_state())
 
 
 @app.post("/cabinet/{patient_id}/photo")
 def cabinet_photo(patient_id: int, dose_id: int, phase: Literal["before", "after"],
                   photo: UploadFile = File(...)):
     """Pi sends before/after slot photos; after the 'after' photo we decide taken."""
-    dose = find("doses", dose_id)
-    m = find("medicines", dose.medicine_id)
-    counts = db["counts"].setdefault(dose_id, {})
+    dose = get_dose(dose_id)
+    m = get_medicine(dose.medicine_id)
+    counts = mem["counts"].setdefault(dose_id, {})
     # fake count until ai.count_pills is ready: pretend one pill was removed
     before = counts.get("before")
     fake = m.pills_left if phase == "before" or before is None else before - 1
@@ -407,7 +502,7 @@ def cabinet_photo(patient_id: int, dose_id: int, phase: Literal["before", "after
 @app.post("/demo/pill_time")
 def demo_pill_time(medicine_id: int) -> DoseLog:
     """Start a dose right now instead of waiting for its scheduled time."""
-    return start_dose(find("medicines", medicine_id), datetime.now())
+    return start_dose(get_medicine(medicine_id), datetime.now())
 
 
 @app.post("/demo/reset")

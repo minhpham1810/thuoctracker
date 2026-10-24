@@ -1,8 +1,8 @@
 // Types mirror backend/models.py and the contract in TEAM.md. Change them there first.
 
-export type Patient = {
-  id: number; name: string; age: number; doctor_id: number; phone: string; family_phone: string;
-};
+// One account = one role; log in by email (POST /login).
+export type User = { id: number; email: string; name: string; role: "patient" | "family" | "doctor" };
+export type Patient = User & { role: "patient"; age: number; doctor_id: number };
 
 // Cabinet boxes: 1-3 top row, 4-6 middle row, 7 the long box across the bottom.
 export const SLOTS = [1, 2, 3, 4, 5, 6, 7] as const;
