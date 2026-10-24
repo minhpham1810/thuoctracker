@@ -3,18 +3,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon, Logo } from "@/components/icon";
 import {
-  api, daysUntil, fmtDate, fmtDateTime, fmtTime, LONG_SLOT, pillColor, SLOTS,
-  type Alert, type DoseLog, type Medicine, type Patient, type User,
+  api, daysUntil, fmtDate, fmtDateTime, fmtTime, LONG_SLOT, onUnauthorized, pillColor, setToken, SLOTS,
+  type Alert, type Contact, type DoseLog, type Family, type Medicine, type Patient, type Session, type User,
 } from "@/lib/api";
 import AddMedicine from "./add-medicine";
 import CameraTest from "./camera-test";
+import Messages from "./chat";
 
-const SAVED = "thuoc-doctor"; // localStorage key: stay logged in across reloads
+const SAVED = "thuoc-doctor-session"; // localStorage key: stay logged in across reloads
 const POLL_MS = 3000;
 const LOW = 5; // matches the backend's low-pill rule; display only
 const FULL = 30; // meter scale
 
 type Data = {
+  contacts: Contact[];
   patients: Patient[];
   alerts: Alert[];
   meds: Record<number, Medicine[]>;
@@ -30,48 +32,85 @@ const ALERT_LABEL: Record<Alert["type"], string> = {
 };
 
 export default function Dashboard() {
-  const [doctor, setDoctor] = useState<User | null | undefined>(undefined); // undefined: not read yet
+  const [session, setSession] = useState<Session | null | undefined>(undefined); // undefined: not read yet
+  const save = useCallback((s: Session | null) => {
+    try { localStorage.setItem(SAVED, JSON.stringify(s)); } catch {}
+    setToken(s?.token ?? null);
+    setSession(s);
+  }, []);
   useEffect(() => {
     const t = setTimeout(() => {
-      try { setDoctor(JSON.parse(localStorage.getItem(SAVED) ?? "null")); } catch { setDoctor(null); }
+      let s: Session | null = null;
+      try { s = JSON.parse(localStorage.getItem(SAVED) ?? "null"); } catch {}
+      save(s);
     }, 0);
-    return () => clearTimeout(t);
-  }, []);
-  function save(d: User | null) {
-    try { localStorage.setItem(SAVED, JSON.stringify(d)); } catch {}
-    setDoctor(d);
+    onUnauthorized(() => save(null)); // session gone (logged out elsewhere, demo reset): back to login
+    return () => { clearTimeout(t); onUnauthorized(null); };
+  }, [save]);
+
+  if (session === undefined) return null;
+  if (!session) return <Login onLogin={save} />;
+  async function logout() {
+    await api("/logout", { method: "POST" }).catch(() => {});
+    save(null);
   }
-  if (doctor === undefined) return null;
-  if (!doctor) return <Login onLogin={save} />;
-  return <DoctorView doctor={doctor} onLogout={() => save(null)} />;
+  return <DoctorView doctor={session.user} onLogout={logout} />;
 }
 
-function Login({ onLogin }: { onLogin: (d: User) => void }) {
-  const [email, setEmail] = useState("");
+const json = (body: unknown): RequestInit => ({
+  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+});
+
+function Login({ onLogin }: { onLogin: (s: Session) => void }) {
+  const [signingUp, setSigningUp] = useState(false);
+  const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setBusy(true);
     try {
-      const u = await api<User>("/login", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }),
-      });
-      if (u.role !== "doctor") return setError("This page is for doctors. Patients and family use the phone app.");
-      onLogin(u);
+      const s = signingUp
+        ? await api<Session>("/signup", json({ ...form, role: "doctor" }))
+        : await api<Session>("/login", json({ email: form.email, password: form.password }));
+      if (s.user.role !== "doctor") {
+        await api("/logout", { method: "POST", headers: { Authorization: `Bearer ${s.token}` } }).catch(() => {});
+        return setError("This page is for doctors. Patients and family use the phone app.");
+      }
+      onLogin(s);
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setBusy(false);
     }
   }
 
   return (
     <form className="panel login" onSubmit={submit}>
       <h1>ThuocTracker</h1>
+      <p className="note">{signingUp ? "Create a doctor account. Patients then sign up in the app with your email." : "Doctor login"}</p>
+      {signingUp && (
+        <label className="field">Name
+          <input value={form.name} onChange={set("name")} required placeholder="Dr. Nguyen" />
+        </label>
+      )}
       <label className="field">Email
-        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
+        <input type="email" value={form.email} onChange={set("email")} required autoFocus autoComplete="username" />
       </label>
-      <button type="submit" className="btn btn-primary">Log in</button>
+      <label className="field">Password {signingUp && <small>at least 6 characters</small>}
+        <input type="password" value={form.password} onChange={set("password")} required minLength={signingUp ? 6 : undefined}
+          autoComplete={signingUp ? "new-password" : "current-password"} />
+      </label>
+      <button type="submit" className="btn btn-primary" disabled={busy}>
+        {busy ? "One moment…" : signingUp ? "Create account" : "Log in"}
+      </button>
       {error && <p className="form-error" role="alert">{error}</p>}
+      <button type="button" className="btn btn-sm" onClick={() => { setSigningUp(!signingUp); setError(null); }}>
+        {signingUp ? "I have an account" : "New doctor? Create an account"}
+      </button>
     </form>
   );
 }
@@ -80,7 +119,9 @@ function DoctorView({ doctor, onLogout }: { doctor: User; onLogout: () => void }
   const [data, setData] = useState<Data | null>(null);
   const [online, setOnline] = useState(true);
   const [selected, setSelected] = useState<number | null>(null);
-  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Medicine | "new" | null>(null);
+  const [tab, setTab] = useState<"alerts" | "messages">("alerts");
+  const [chatWith, setChatWith] = useState<number | null>(null);
   const [newAlerts, setNewAlerts] = useState<Set<number>>(new Set());
   const seen = useRef<Set<number> | null>(null);
   const [popups, setPopups] = useState<Popups>("unsupported");
@@ -88,11 +129,8 @@ function DoctorView({ doctor, onLogout }: { doctor: User; onLogout: () => void }
   // shortcut: refetches everything every 3 s; fine for a few demo patients, use /alerts?since= at scale
   const load = useCallback(async () => {
     try {
-      const [patients, allAlerts] = await Promise.all([
-        api<Patient[]>(`/patients?doctor_id=${doctor.id}`),
-        api<Alert[]>("/alerts"),
-      ]);
-      const alerts = allAlerts.filter((a) => patients.some((p) => p.id === a.patient_id)); // only this doctor's patients
+      const [contacts, alerts] = await Promise.all([api<Contact[]>("/contacts"), api<Alert[]>("/alerts")]);
+      const patients = contacts.map((c) => c.user).filter((u): u is Patient => u.role === "patient");
       const per = await Promise.all(patients.map((p) => Promise.all([
         api<Medicine[]>(`/patients/${p.id}/medicines`),
         api<DoseLog[]>(`/patients/${p.id}/doses`),
@@ -108,6 +146,7 @@ function DoctorView({ doctor, onLogout }: { doctor: User; onLogout: () => void }
         }
       }
       setData({
+        contacts,
         patients,
         alerts: [...alerts].sort((a, b) => b.at.localeCompare(a.at)),
         meds: Object.fromEntries(patients.map((p, i) => [p.id, per[i][0]])),
@@ -117,7 +156,7 @@ function DoctorView({ doctor, onLogout }: { doctor: User; onLogout: () => void }
     } catch {
       setOnline(false);
     }
-  }, [doctor.id]);
+  }, []);
 
   useEffect(() => {
     const first = setTimeout(() => {
@@ -132,6 +171,12 @@ function DoctorView({ doctor, onLogout }: { doctor: User; onLogout: () => void }
 
   async function enablePopups() {
     setPopups(await Notification.requestPermission());
+  }
+
+  const unread = data?.contacts.reduce((n, c) => n + c.unread, 0) ?? 0;
+  function message(id: number) {
+    setTab("messages");
+    setChatWith(id);
   }
 
   async function resetDemo() {
@@ -197,14 +242,25 @@ function DoctorView({ doctor, onLogout }: { doctor: User; onLogout: () => void }
         <section className="panel">
           {patient && data ? (
             <PatientView patient={patient} meds={data.meds[patient.id] ?? []} doses={data.doses[patient.id] ?? []}
-              onAdd={() => setAdding(true)} onChange={load} />
+              family={data.contacts.map((c) => c.user).filter((u): u is Family => u.role === "family" && u.patient_id === patient.id)}
+              onEdit={setEditing} onChange={load} onMessage={message} />
           ) : (
             <p className="empty">{data ? "Select a patient." : "Loading patients…"}</p>
           )}
         </section>
 
-        <aside className="panel alerts" aria-labelledby="alerts-title">
-          <h2 id="alerts-title">Alerts</h2>
+        <aside className="panel alerts" aria-label="Alerts and messages">
+          <div className="tabs" role="tablist">
+            <button type="button" role="tab" aria-selected={tab === "alerts"} onClick={() => setTab("alerts")}>
+              Alerts
+            </button>
+            <button type="button" role="tab" aria-selected={tab === "messages"} onClick={() => setTab("messages")}>
+              Messages{unread > 0 && <span className="count">{unread}</span>}
+            </button>
+          </div>
+          {tab === "messages" ? (
+            <Messages me={doctor} contacts={data?.contacts ?? []} withId={chatWith} onOpen={setChatWith} onChange={load} />
+          ) : (<>
           <ol className="alert-list" aria-live="polite">
             {data?.alerts.map((a) => {
               const who = data.patients.find((p) => p.id === a.patient_id);
@@ -228,20 +284,23 @@ function DoctorView({ doctor, onLogout }: { doctor: User; onLogout: () => void }
             })}
           </ol>
           {data && !data.alerts.length && <p className="empty">No alerts. Everyone is on track.</p>}
+          </>)}
         </aside>
       </main>
 
-      {adding && patient && (
-        <AddMedicine patient={patient} meds={data?.meds[patient.id] ?? []}
-          onClose={() => setAdding(false)} onSaved={() => { setAdding(false); load(); }} />
+      {editing && patient && (
+        <AddMedicine patient={patient} meds={data?.meds[patient.id] ?? []} med={editing === "new" ? undefined : editing}
+          onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
       )}
     </>
   );
 }
 
-function PatientView({ patient, meds, doses, onAdd, onChange }: {
-  patient: Patient; meds: Medicine[]; doses: DoseLog[]; onAdd: () => void; onChange: () => void;
+function PatientView({ patient, meds, doses, family, onEdit, onChange, onMessage }: {
+  patient: Patient; meds: Medicine[]; doses: DoseLog[]; family: Family[];
+  onEdit: (m: Medicine | "new") => void; onChange: () => void; onMessage: (userId: number) => void;
 }) {
+  const onAdd = () => onEdit("new");
   const [busy, setBusy] = useState<number | null>(null);
   const taken = doses.filter((d) => d.status === "taken").length;
   const missed = doses.filter((d) => d.status === "missed").length;
@@ -262,7 +321,21 @@ function PatientView({ patient, meds, doses, onAdd, onChange }: {
       <div className="patient-head">
         <div>
           <h2>{patient.name}</h2>
-          <div className="meta">Age {patient.age} · {patient.email}</div>
+          <div className="meta">
+            Age {patient.age} · {patient.email} · <a href={`/cabinet?patient=${patient.id}`} target="_blank">Cabinet screen</a>
+          </div>
+          <ul className="family">
+            <li>
+              <button type="button" className="btn btn-sm" onClick={() => onMessage(patient.id)}>Message {patient.name}</button>
+            </li>
+            {family.map((f) => (
+              <li key={f.id}>
+                <span>Family: <b>{f.name}</b> <small>{f.email}</small></span>
+                <button type="button" className="btn btn-sm" onClick={() => onMessage(f.id)}>Message</button>
+              </li>
+            ))}
+            {!family.length && <li className="note">No family linked yet. They sign up in the app with {patient.email}.</li>}
+          </ul>
         </div>
         <div className="actions">
           <button type="button" className="btn btn-primary" onClick={onAdd} disabled={!firstFree}>
@@ -323,6 +396,9 @@ function PatientView({ patient, meds, doses, onAdd, onChange }: {
                 <button type="button" className="btn btn-sm" onClick={() => pillTime(m)} disabled={busy === m.id}
                   title="Demo: start this dose now on the cabinet">
                   <Icon name="bell" /> {busy === m.id ? "Sending…" : "Pill time now"}
+                </button>
+                <button type="button" className={`btn btn-sm${low ? " btn-primary" : ""}`} onClick={() => onEdit(m)}>
+                  {low ? "Refill" : "Edit"}
                 </button>
               </div>
             </article>

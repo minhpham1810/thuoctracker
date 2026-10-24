@@ -2,27 +2,63 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import { api } from './src/api';
+import { api, getBaseUrl, onUnauthorized, setBaseUrl, setToken } from './src/api';
 import Chat from './src/Chat';
 import { useNotifyNew, usePoll } from './src/hooks';
 import Login from './src/Login';
 import { onBanner, setupNotifications } from './src/notify';
 import PatientView from './src/PatientView';
 import People from './src/People';
+import { clearSession, loadSession, saveSession } from './src/session';
+import SignUp from './src/SignUp';
 import { colors, Tabs } from './src/ui';
 
+// Restore the last login before the first render, so the app opens where it was.
+function restore() {
+  const saved = loadSession();
+  if (!saved) return null;
+  setBaseUrl(saved.url);
+  setToken(saved.token);
+  return saved.user;
+}
+
 export default function App() {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(restore);
   const [other, setOther] = useState(null); // person being chatted with
+  const [signingUp, setSigningUp] = useState(false);
+  const [notice, setNotice] = useState(null); // shown on the login screen
 
-  useEffect(() => { if (user) setupNotifications(user.id); }, [user]);
+  const login = (session) => {
+    setToken(session.token);
+    saveSession({ ...session, url: getBaseUrl() });
+    setNotice(null);
+    setSigningUp(false);
+    setUser(session.user);
+  };
+  const logout = (message = null) => {
+    if (message === null) api.logout().catch(() => {}); // a 401 means the session is already gone
+    setToken(null);
+    clearSession();
+    setNotice(message);
+    setOther(null);
+    setUser(null);
+  };
 
-  const logout = () => { setUser(null); setOther(null); };
+  useEffect(() => {
+    onUnauthorized(() => logout('Please log in again.'));
+    return () => onUnauthorized(null);
+  }, []);
+  // re-check a restored login (and pick up any change to the account)
+  useEffect(() => { if (user) api.me().then(setUser).catch(() => {}); }, [user?.id]);
+  useEffect(() => { if (user) setupNotifications(); }, [user?.id]);
+
   // the patient whose "Today" this user can see: their own, their family member's, or the one the doctor opened
   const patientId = user?.role === 'patient' ? user.id : user?.role === 'family' ? user.patient_id
     : other?.role === 'patient' ? other.id : null;
 
-  let body = <Login onLogin={setUser} />;
+  let body = signingUp
+    ? <SignUp onLogin={login} onBack={() => setSigningUp(false)} />
+    : <Login onLogin={login} onSignUp={() => setSigningUp(true)} notice={notice} />;
   if (other) {
     const chat = <Chat user={user} other={other} />;
     body = user.role === 'doctor' && patientId
@@ -40,7 +76,7 @@ export default function App() {
       <SafeAreaView style={s.screen} edges={['top', 'bottom']}>
         {user && (
           <View style={s.header}>
-            <Pressable onPress={other ? () => setOther(null) : logout} hitSlop={12}>
+            <Pressable onPress={other ? () => setOther(null) : () => logout()} hitSlop={12}>
               <Text style={s.headerBtn}>{other ? '‹ Back' : 'Log out'}</Text>
             </Pressable>
             <Text style={s.headerTitle} numberOfLines={1}>{other ? other.name : user.name}</Text>
@@ -94,24 +130,21 @@ function Watcher({ user }) {
 
 async function collectEvents(user) {
   const out = [];
-  const [people, messages] = await Promise.all([api.contacts(user.id), api.messages(user.id)]);
-  const nameOf = Object.fromEntries(people.map((p) => [p.id, p.name]));
-  for (const m of messages) {
-    if (m.to_id === user.id) out.push({ id: `m${m.id}`, title: nameOf[m.from_id] ?? 'Message', body: m.text });
+  const [contacts, alerts] = await Promise.all([api.contacts(), api.alerts()]);
+  for (const { user: who, last } of contacts) {
+    if (last && last.from_id === who.id) out.push({ id: `m${last.id}`, title: who.name, body: last.text });
   }
-  if (user.role !== 'patient') {
-    const pids = user.role === 'doctor' ? people.filter((p) => p.role === 'patient').map((p) => p.id) : [user.patient_id];
-    for (const a of await api.alerts()) {
-      if (a.to === user.role && pids.includes(a.patient_id)) out.push({ id: `a${a.id}`, title: 'ThuocTracker', body: a.message });
+  for (const a of alerts) {
+    if (a.to === user.role) out.push({ id: `a${a.id}`, title: 'ThuocTracker', body: a.message });
+  }
+  if (user.role === 'family') {
+    const c = await api.cabinetState(user.patient_id);
+    if (c.mode === 'take') {
+      const who = contacts.find((x) => x.user.id === user.patient_id)?.user.name ?? 'Your family member';
+      out.push({ id: `d${c.dose_id}`, title: 'Pill time', body: `Time for ${who}'s ${c.color} pill (${c.medicine}), slot ${c.slot}.` });
     }
-    if (user.role === 'family') {
-      const c = await api.cabinetState(user.patient_id);
-      if (c.mode === 'take') {
-        const who = nameOf[user.patient_id] ?? 'Your family member';
-        out.push({ id: `d${c.dose_id}`, title: 'Pill time', body: `Time for ${who}'s ${c.color} pill (${c.medicine}), slot ${c.slot}.` });
-      }
-    }
-  } else {
+  }
+  if (user.role === 'patient') {
     const c = await api.cabinetState(user.id);
     if (c.mode === 'take') out.push({ id: `d${c.dose_id}`, title: 'Pill time', body: c.message });
     if (c.mode === 'missed') {

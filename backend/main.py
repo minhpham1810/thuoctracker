@@ -4,16 +4,22 @@ Run: uvicorn backend.main:app --reload --host 0.0.0.0   (from repo root). Web pa
 
 Routes and response shapes follow the contract in TEAM.md. Data lives in Tiger Data (Postgres, see db.py),
 seeded with sample users on first start; AI routes fall back to fake answers if ai/ fails.
+
+Auth: app and dashboard routes need "Authorization: Bearer <token>" from /login or /signup.
+Cabinet routes (Pi + touchscreen) and /demo/* are login-free: trusted devices on the hotspot.
 """
 import asyncio
 import hashlib
+import hmac
 import os
+import secrets
 from contextlib import asynccontextmanager
 from datetime import date, datetime, time, timedelta
 from typing import Literal, Optional
 
+import psycopg
 from dotenv import load_dotenv
-from fastapi import Body, FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import TypeAdapter
@@ -21,7 +27,8 @@ from pydantic import TypeAdapter
 import ai
 
 from .db import SCHEMA, pool, q, q1
-from .models import Alert, AnyUser, Doctor, DoseLog, Medicine, Message, Patient, PushToken, Role
+from .models import (Alert, AnyUser, Contact, Credentials, DoseLog, Medicine, MedicineUpdate, Message, Patient,
+                     PushToken, Role, Session, Signup)
 from .push import send_push
 
 load_dotenv()
@@ -29,6 +36,7 @@ DEMO = os.environ.get("DEMO") == "1"  # shortened times so judges see it live
 MISSED_AFTER = timedelta(seconds=30) if DEMO else timedelta(minutes=30)
 REMIND_EVERY = timedelta(seconds=10) if DEMO else timedelta(minutes=10)
 TICK_SECONDS = 2
+DEMO_PASSWORD = "demo1234"  # every seeded account
 AUDIO_DIR = "audio"  # MP3s from ai.speak(), served at /audio/
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
@@ -39,10 +47,16 @@ mem: dict = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    q(SCHEMA)
+    try:
+        q(SCHEMA)
+    except Exception as e:
+        raise RuntimeError(f"Can't reach Tiger Data: check DATABASE_URL in .env and the internet ({e!r})")
     if q1("SELECT 1 FROM users LIMIT 1") is None:
         seed()
     else:
+        # accounts made before passwords existed get the demo password
+        for r in q("SELECT id FROM users WHERE password_hash IS NULL"):
+            q("UPDATE users SET password_hash = %s WHERE id = %s", hash_password(DEMO_PASSWORD), r["id"])
         # a restart (or --reload) must not re-send alerts for conditions that were already alerted
         today = date.today()
         meds = all_medicines()
@@ -55,7 +69,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="ThuocTracker", lifespan=lifespan)
-# the Expo app in a computer's browser (doctor) calls the API from another origin
+# the Expo app opened in a browser calls the API from another origin
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
@@ -72,21 +86,23 @@ def reset_mem(sent: set):
 
 
 def seed():
-    """Wipe the DB and load the demo people. Log in with any of these emails."""
+    """Wipe the DB (and every login) and load the demo people. Password for all: DEMO_PASSWORD."""
     today = date.today()
     now = datetime.now()
+    pw = hash_password(DEMO_PASSWORD)
     with pool.connection() as c, c.transaction():
-        c.execute("TRUNCATE users, medicines, doses, alerts, messages RESTART IDENTITY CASCADE")
+        c.execute("TRUNCATE users, medicines, doses, alerts, messages, sessions RESTART IDENTITY CASCADE")
         cur = c.cursor()
         # patients keep ids 1-3: the cabinet screen and the Pi use ?patient=1. Doctor first so FKs resolve.
         cur.executemany(
-            "INSERT INTO users (id, email, name, role, age, doctor_id, patient_id) VALUES (%s, %s, %s, %s, %s, %s, %s)", [
-                (4, "doctor@demo.com", "Dr. Nguyen", "doctor", None, None, None),
-                (1, "lan@demo.com", "Grandma Lan", "patient", 78, 4, None),
-                (2, "tran@demo.com", "Mr. Tran", "patient", 82, 4, None),
-                (3, "hoa@demo.com", "Mrs. Hoa", "patient", 74, 4, None),
-                (5, "minh@demo.com", "Minh (grandson)", "family", None, None, 1),
-                (6, "anh@demo.com", "Anh (son)", "family", None, None, 2),
+            "INSERT INTO users (id, email, name, role, age, doctor_id, patient_id, password_hash)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s)", [
+                (4, "doctor@demo.com", "Dr. Nguyen", "doctor", None, None, None, pw),
+                (1, "lan@demo.com", "Grandma Lan", "patient", 78, 4, None, pw),
+                (2, "tran@demo.com", "Mr. Tran", "patient", 82, 4, None, pw),
+                (3, "hoa@demo.com", "Mrs. Hoa", "patient", 74, 4, None, pw),
+                (5, "minh@demo.com", "Minh (grandson)", "family", None, None, 1, pw),
+                (6, "anh@demo.com", "Anh (son)", "family", None, None, 2, pw),
             ])
         c.execute("SELECT setval('users_id_seq', (SELECT max(id) FROM users))")
         # RESTART IDENTITY: these get ids 1-4 in order
@@ -108,15 +124,51 @@ def seed():
                 ("missed", "family", 1, "Grandma Lan missed Metformin (12:00).", now - timedelta(hours=23)),
                 ("low_pills", "doctor", 1, "Grandma Lan has 4 Metformin left. Refill needed.", now - timedelta(hours=1)),
             ])
-        cur.executemany("INSERT INTO messages (from_id, to_id, text, at) VALUES (%s, %s, %s, %s)", [
-            (5, 4, "Dr. Nguyen, Grandma seems tired after the new Metformin.", now - timedelta(hours=3)),
-            (4, 5, "Thanks for telling me. Let's talk at her visit on Friday.", now - timedelta(hours=2)),
+        cur.executemany("INSERT INTO messages (from_id, to_id, text, at, read_at) VALUES (%s, %s, %s, %s, %s)", [
+            (5, 4, "Dr. Nguyen, Grandma seems tired after the new Metformin.", now - timedelta(hours=3), now),
+            (4, 5, "Thanks for telling me. Let's talk at her visit on Friday.", now - timedelta(hours=2), now),
         ])
     reset_mem({("low_pills", 2)})  # the seeded low_pills alert above
 
 
-# --- Reads ---------------------------------------------------------------------
-as_user = TypeAdapter(AnyUser).validate_python
+# --- Auth ----------------------------------------------------------------------
+def hash_password(pw: str) -> str:
+    salt = os.urandom(16)
+    return f"{salt.hex()}${hashlib.scrypt(pw.encode(), salt=salt, n=2**14, r=8, p=1).hex()}"
+
+
+def check_password(pw: str, stored: Optional[str]) -> bool:
+    if not stored:
+        return False
+    salt, digest = stored.split("$")
+    got = hashlib.scrypt(pw.encode(), salt=bytes.fromhex(salt), n=2**14, r=8, p=1).hex()
+    return hmac.compare_digest(got, digest)
+
+
+def bearer(authorization: str = Header("")) -> str:
+    return authorization.removeprefix("Bearer ").strip()
+
+
+def me(token: str = Depends(bearer)):
+    """The logged-in user. shortcut: sessions never expire; add created_at checks if this goes beyond the demo."""
+    row = q1("SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = %s", token) if token else None
+    if not row:
+        raise HTTPException(401, "Please log in")
+    return as_user(row)
+
+
+def new_session(user_row: dict) -> Session:
+    token = secrets.token_urlsafe(32)
+    q("INSERT INTO sessions (token, user_id, created_at) VALUES (%s, %s, %s)", token, user_row["id"], datetime.now())
+    return Session(token=token, user=as_user(user_row))
+
+
+def find_email(email: Optional[str]) -> Optional[dict]:
+    return q1("SELECT * FROM users WHERE lower(email) = lower(%s)", (email or "").strip())
+
+
+# --- Reads + access ------------------------------------------------------------
+as_user = TypeAdapter(AnyUser).validate_python  # drops password_hash: it's not a model field
 
 
 def get_user(user_id: int):
@@ -151,18 +203,39 @@ def all_medicines() -> list[Medicine]:
     return [Medicine(**r) for r in q("SELECT * FROM medicines ORDER BY id")]
 
 
-def contacts(u) -> list:
-    """People assigned to u: doctor -> their patients + those patients' families;
-    patient -> their doctor + family; family -> their patient + that patient's doctor."""
+def medicines_of(patient_id: int) -> list[Medicine]:
+    return [Medicine(**r) for r in q("SELECT * FROM medicines WHERE patient_id = %s ORDER BY slot", patient_id)]
+
+
+def doses_of(patient_id: int) -> list[DoseLog]:
+    rows = q("SELECT d.* FROM doses d JOIN medicines m ON m.id = d.medicine_id"
+             " WHERE m.patient_id = %s ORDER BY d.due_at DESC", patient_id)
+    return [DoseLog(**r) for r in rows]
+
+
+def circle(u) -> tuple[str, list]:
+    """WHERE clause over `users u` for the people assigned to u: doctor -> their patients + those patients'
+    families; patient -> their doctor + family; family -> their patient + that patient's doctor."""
     if u.role == "doctor":
-        rows = q("SELECT * FROM users WHERE doctor_id = %s"
-                 " OR patient_id IN (SELECT id FROM users WHERE doctor_id = %s) ORDER BY id", u.id, u.id)
-    elif u.role == "patient":
-        rows = q("SELECT * FROM users WHERE id = %s OR patient_id = %s ORDER BY id", u.doctor_id, u.id)
-    else:
-        rows = q("SELECT * FROM users WHERE id = %s OR id = (SELECT doctor_id FROM users WHERE id = %s)"
-                 " ORDER BY id", u.patient_id, u.patient_id)
-    return [as_user(r) for r in rows]
+        return "u.doctor_id = %s OR u.patient_id IN (SELECT id FROM users WHERE doctor_id = %s)", [u.id, u.id]
+    if u.role == "patient":
+        return "u.id = %s OR u.patient_id = %s", [u.doctor_id, u.id]
+    return "u.id = %s OR u.id = (SELECT doctor_id FROM users WHERE id = %s)", [u.patient_id, u.patient_id]
+
+
+def require_access(u, patient_id: int) -> Patient:
+    """The patient, their family or their doctor."""
+    p = get_patient(patient_id)
+    if not (u.id == p.id or (u.role == "family" and u.patient_id == p.id) or (u.role == "doctor" and p.doctor_id == u.id)):
+        raise HTTPException(403, "Not in this patient's care circle")
+    return p
+
+
+def require_doctor_of(u, patient_id: int) -> Patient:
+    p = get_patient(patient_id)
+    if u.role != "doctor" or p.doctor_id != u.id:
+        raise HTTPException(403, "Only this patient's doctor can do that")
+    return p
 
 
 # --- Cabinet + alerts ----------------------------------------------------------
@@ -250,7 +323,8 @@ def dose_log(patient_id: int) -> list[dict]:
 
 
 def push_users(user_ids: list[int], title: str, body: str, data: dict):
-    tokens = [r["token"] for r in q("SELECT token FROM push_tokens WHERE user_id = ANY(%s) ORDER BY token", user_ids)]
+    tokens = [r["push_token"] for r in q("SELECT DISTINCT push_token FROM sessions"
+                                          " WHERE user_id = ANY(%s) AND push_token IS NOT NULL", user_ids)]
     send_push(tokens, title, body, data)
 
 
@@ -292,7 +366,7 @@ def tick():
     """One scheduler pass: start due doses, remind, mark missed, low/expiring alerts."""
     now = datetime.now()
     last, mem["last_tick"] = mem["last_tick"], now
-    patients = {p.id: p for p in list_patients()}
+    patients = {r["id"]: Patient(**r) for r in q("SELECT * FROM users WHERE role = 'patient'")}
     meds = {m.id: m for m in all_medicines()}
     for m in meds.values():
         p = patients[m.patient_id]
@@ -308,7 +382,9 @@ def tick():
         elif m.pills_left >= 5:
             mem["sent"].discard(low)  # refilled; alert again next time it runs low
         expiring = ("expiring_soon", m.id)
-        if m.expiration - now.date() <= timedelta(days=7) and expiring not in mem["sent"]:
+        if m.expiration - now.date() > timedelta(days=7):
+            mem["sent"].discard(expiring)  # new bottle; alert again when this one gets close
+        elif expiring not in mem["sent"]:
             mem["sent"].add(expiring)
             add_alert("expiring_soon", "family", p, f"{p.name}'s {m.name} expires on {m.expiration}.")
             add_alert("expiring_soon", "doctor", p, f"{p.name}'s {m.name} expires on {m.expiration}.")
@@ -344,84 +420,83 @@ def health():
 
 
 # --- Accounts ------------------------------------------------------------------
+@app.post("/signup")
+def signup(s: Signup) -> Session:
+    email = s.email.strip().lower()
+    if "@" not in email:
+        raise HTTPException(400, "Enter a valid email")
+    if find_email(email):
+        raise HTTPException(409, "That email already has an account")
+    doctor_id = patient_id = None
+    if s.role == "patient":
+        if s.age is None:
+            raise HTTPException(400, "Enter your age")
+        d = find_email(s.doctor_email)
+        if not d or d["role"] != "doctor":
+            raise HTTPException(400, "No doctor account with that email")
+        doctor_id = d["id"]
+    elif s.role == "family":
+        p = find_email(s.patient_email)
+        if not p or p["role"] != "patient":
+            raise HTTPException(400, "No patient account with that email")
+        patient_id = p["id"]
+    try:
+        row = q1("INSERT INTO users (email, name, role, age, doctor_id, patient_id, password_hash)"
+                 " VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *",
+                 email, s.name.strip(), s.role, s.age if s.role == "patient" else None,
+                 doctor_id, patient_id, hash_password(s.password))
+    except psycopg.errors.UniqueViolation:  # same email signed up at the same moment
+        raise HTTPException(409, "That email already has an account")
+    return new_session(row)
+
+
 @app.post("/login")
-def login(email: str = Body(embed=True)) -> AnyUser:
-    """Email only, no password (demo)."""
-    row = q1("SELECT * FROM users WHERE lower(email) = lower(%s)", email.strip())
-    if not row:
-        raise HTTPException(404, "No account with that email")
-    return as_user(row)
+def login(c: Credentials) -> Session:
+    row = find_email(c.email)
+    if not row or not check_password(c.password, row["password_hash"]):
+        raise HTTPException(401, "Wrong email or password")  # same message: don't reveal which emails exist
+    return new_session(row)
 
 
-@app.get("/users/{user_id}/contacts")
-def user_contacts(user_id: int) -> list[AnyUser]:
-    return contacts(get_user(user_id))
+@app.post("/logout")
+def logout(token: str = Depends(bearer)):
+    q("DELETE FROM sessions WHERE token = %s", token)
+    return {"ok": True}
 
 
-# --- Data + doctor dashboard -------------------------------------------------
-@app.get("/patients")
-def list_patients(doctor_id: Optional[int] = None) -> list[Patient]:
-    rows = q("SELECT * FROM users WHERE role = 'patient' AND (%s::int IS NULL OR doctor_id = %s) ORDER BY id",
-             doctor_id, doctor_id)
-    return [Patient(**r) for r in rows]
+@app.get("/me")
+def whoami(u=Depends(me)) -> AnyUser:
+    return u
 
 
-@app.post("/patients")
-def add_patient(p: Patient) -> Patient:
-    if get_user(p.doctor_id).role != "doctor":
-        raise HTTPException(400, f"user {p.doctor_id} is not a doctor")
-    if q1("SELECT 1 FROM users WHERE lower(email) = lower(%s)", p.email):
-        raise HTTPException(409, f"{p.email} already has an account")
-    row = q1("INSERT INTO users (email, name, role, age, doctor_id) VALUES (%s, %s, 'patient', %s, %s) RETURNING *",
-             p.email.strip(), p.name, p.age, p.doctor_id)
-    return Patient(**row)
+@app.post("/push/register")
+def register_push(t: PushToken, token: str = Depends(bearer), u=Depends(me)):
+    """The app sends its Expo push token after login. One phone = one account."""
+    q("UPDATE sessions SET push_token = NULL WHERE push_token = %s", t.token)
+    q("UPDATE sessions SET push_token = %s WHERE token = %s", t.token, token)
+    return {"ok": True}
 
 
-@app.get("/patients/{patient_id}/medicines")
-def patient_medicines(patient_id: int) -> list[Medicine]:
-    return [Medicine(**r) for r in q("SELECT * FROM medicines WHERE patient_id = %s ORDER BY slot", patient_id)]
+# --- Care circle: people, chat, alerts -------------------------------------------
+@app.get("/contacts")
+def list_contacts(u=Depends(me)) -> list[Contact]:
+    where, args = circle(u)
+    rows = q(f"""SELECT u.*,
+        (SELECT count(*) FROM messages m WHERE m.from_id = u.id AND m.to_id = %s AND m.read_at IS NULL) AS unread,
+        (SELECT row_to_json(m) FROM messages m
+          WHERE (m.from_id = u.id AND m.to_id = %s) OR (m.from_id = %s AND m.to_id = u.id)
+          ORDER BY m.at DESC, m.id DESC LIMIT 1) AS last
+        FROM users u WHERE {where} ORDER BY u.id""", u.id, u.id, u.id, *args)
+    return [Contact(user=as_user(r), unread=r["unread"], last=r["last"]) for r in rows]
 
 
-@app.post("/medicines")
-def add_medicine(m: Medicine) -> Medicine:
-    get_patient(m.patient_id)
-    if q1("SELECT 1 FROM medicines WHERE patient_id = %s AND slot = %s", m.patient_id, m.slot):
-        raise HTTPException(409, f"slot {m.slot} already has a medicine")
-    row = q1("INSERT INTO medicines (patient_id, name, dose, times, slot, pills_left, expiration, color)"
-             " VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
-             m.patient_id, m.name, m.dose, m.times, m.slot, m.pills_left, m.expiration, m.color)
-    return Medicine(**row)
-
-
-@app.get("/patients/{patient_id}/doses")
-def patient_doses(patient_id: int) -> list[DoseLog]:
-    rows = q("SELECT d.* FROM doses d JOIN medicines m ON m.id = d.medicine_id"
-             " WHERE m.patient_id = %s ORDER BY d.due_at DESC", patient_id)
-    return [DoseLog(**r) for r in rows]
-
-
-@app.post("/doses/{dose_id}/taken")
-def dose_taken(dose_id: int, method: Literal["camera", "screen"] = "screen") -> DoseLog:
-    return mark_taken(get_dose(dose_id), method)
-
-
-@app.get("/alerts")
-def list_alerts(since: Optional[datetime] = None) -> list[Alert]:
-    rows = q('SELECT * FROM alerts WHERE %s::timestamp IS NULL OR at > %s ORDER BY id', since, since)
-    return [Alert(**r) for r in rows]
-
-
-@app.get("/doctors")
-def list_doctors() -> list[Doctor]:
-    return [Doctor(**r) for r in q("SELECT * FROM users WHERE role = 'doctor' ORDER BY id")]
-
-
-# --- Mobile app: 1:1 chat + push ------------------------------------------------
-@app.get("/users/{user_id}/messages")
-def list_messages(user_id: int, with_id: Optional[int] = None, since: Optional[datetime] = None) -> list[Message]:
-    """Messages to or from user_id (only with with_id if given), oldest first."""
-    sql, args = "SELECT * FROM messages WHERE %s IN (from_id, to_id)", [user_id]
+@app.get("/messages")
+def list_messages(with_id: Optional[int] = None, since: Optional[datetime] = None, u=Depends(me)) -> list[Message]:
+    """My messages (only with with_id if given), oldest first. Opening a chat marks it read."""
+    sql, args = "SELECT * FROM messages WHERE %s IN (from_id, to_id)", [u.id]
     if with_id is not None:
+        q("UPDATE messages SET read_at = %s WHERE from_id = %s AND to_id = %s AND read_at IS NULL",
+          datetime.now(), with_id, u.id)
         sql += " AND %s IN (from_id, to_id)"
         args.append(with_id)
     if since is not None:
@@ -430,34 +505,107 @@ def list_messages(user_id: int, with_id: Optional[int] = None, since: Optional[d
     return [Message(**r) for r in q(sql + " ORDER BY at, id", *args)]
 
 
-@app.post("/users/{user_id}/messages")
-def send_message(user_id: int, msg: Message) -> Message:
-    me = get_user(user_id)
-    if msg.to_id not in {c.id for c in contacts(me)}:
-        raise HTTPException(403, "You can only message people assigned to you")
+@app.post("/messages")
+def send_message(msg: Message, u=Depends(me)) -> Message:
+    where, args = circle(u)
+    if not q1(f"SELECT 1 FROM users u WHERE u.id = %s AND ({where})", msg.to_id, *args):
+        raise HTTPException(403, "You can only message people in your care circle")
     text = msg.text.strip()
     if not text:
         raise HTTPException(400, "Empty message")
     row = q1("INSERT INTO messages (from_id, to_id, text, at) VALUES (%s, %s, %s, %s) RETURNING *",
-             me.id, msg.to_id, text, datetime.now())
-    push_users([msg.to_id], me.name, text, {"from_id": me.id})
+             u.id, msg.to_id, text, datetime.now())
+    push_users([msg.to_id], u.name, text, {"from_id": u.id})
     return Message(**row)
 
 
-@app.post("/push/register")
-def register_push(t: PushToken):
-    """The app sends its Expo push token after login. One phone = one user (re-login moves it)."""
-    get_user(t.user_id)
-    q("INSERT INTO push_tokens (token, user_id) VALUES (%s, %s)"
-      " ON CONFLICT (token) DO UPDATE SET user_id = EXCLUDED.user_id", t.token, t.user_id)
+@app.get("/alerts")
+def list_alerts(since: Optional[datetime] = None, u=Depends(me)) -> list[Alert]:
+    """Doctor: every alert about their patients. Family: their patient's family alerts. Patient: none."""
+    if u.role == "patient":
+        return []
+    if u.role == "doctor":
+        sql, args = "SELECT a.* FROM alerts a JOIN users p ON p.id = a.patient_id WHERE p.doctor_id = %s", [u.id]
+    else:
+        sql, args = """SELECT a.* FROM alerts a WHERE a.patient_id = %s AND a."to" = 'family'""", [u.patient_id]
+    if since is not None:
+        sql += " AND a.at > %s"
+        args.append(since)
+    return [Alert(**r) for r in q(sql + " ORDER BY a.id", *args)]
+
+
+# --- Patient data ---------------------------------------------------------------
+@app.get("/patients/{patient_id}/medicines")
+def patient_medicines(patient_id: int, u=Depends(me)) -> list[Medicine]:
+    require_access(u, patient_id)
+    return medicines_of(patient_id)
+
+
+@app.get("/patients/{patient_id}/doses")
+def patient_doses(patient_id: int, u=Depends(me)) -> list[DoseLog]:
+    require_access(u, patient_id)
+    return doses_of(patient_id)
+
+
+def slot_taken(patient_id: int, slot: int) -> bool:
+    return q1("SELECT 1 FROM medicines WHERE patient_id = %s AND slot = %s", patient_id, slot) is not None
+
+
+@app.post("/medicines")
+def add_medicine(m: Medicine, u=Depends(me)) -> Medicine:
+    require_doctor_of(u, m.patient_id)
+    if slot_taken(m.patient_id, m.slot):
+        raise HTTPException(409, f"slot {m.slot} already has a medicine")
+    row = q1("INSERT INTO medicines (patient_id, name, dose, times, slot, pills_left, expiration, color)"
+             " VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
+             m.patient_id, m.name, m.dose, m.times, m.slot, m.pills_left, m.expiration, m.color)
+    return Medicine(**row)
+
+
+@app.patch("/medicines/{medicine_id}")
+def update_medicine(medicine_id: int, change: MedicineUpdate, u=Depends(me)) -> Medicine:
+    """Edit or refill (pills_left). Only the patient's doctor."""
+    m = get_medicine(medicine_id)
+    require_doctor_of(u, m.patient_id)
+    fields = change.model_dump(exclude_unset=True, exclude_none=True)
+    if fields.get("slot", m.slot) != m.slot and slot_taken(m.patient_id, fields["slot"]):
+        raise HTTPException(409, f"slot {fields['slot']} already has a medicine")
+    m = m.model_copy(update=fields)
+    row = q1("UPDATE medicines SET name = %s, dose = %s, times = %s, slot = %s, pills_left = %s, expiration = %s,"
+             " color = %s WHERE id = %s RETURNING *",
+             m.name, m.dose, m.times, m.slot, m.pills_left, m.expiration, m.color, m.id)
+    return Medicine(**row)
+
+
+@app.delete("/medicines/{medicine_id}")
+def delete_medicine(medicine_id: int, u=Depends(me)):
+    m = get_medicine(medicine_id)
+    require_doctor_of(u, m.patient_id)
+    dose_ids = {r["id"] for r in q("SELECT id FROM doses WHERE medicine_id = %s", m.id)}
+    q("DELETE FROM medicines WHERE id = %s", m.id)  # its doses go with it (ON DELETE CASCADE)
+    for d in dose_ids:
+        drop_door_commands(m.patient_id, d)
+    if mem["state"].get(m.patient_id, {}).get("dose_id") in dose_ids:
+        mem["state"].pop(m.patient_id)  # cabinet screen back to idle
     return {"ok": True}
+
+
+@app.post("/doses/{dose_id}/taken")
+def dose_taken(dose_id: int, u=Depends(me)) -> DoseLog:
+    """The patient's phone: "I took it"."""
+    dose = get_dose(dose_id)
+    if get_medicine(dose.medicine_id).patient_id != u.id:
+        raise HTTPException(403, "Only the patient can confirm a dose")
+    return mark_taken(dose, "screen")
 
 
 # --- AI (wraps ai/; fake answers until those functions are ready) -----------
 # sync defs so FastAPI runs the slow Gemini/ElevenLabs calls in a thread
 @app.post("/ai/label")
-def read_label(photo: UploadFile = File(...)):
-    """Label photo -> Medicine draft fields."""
+def read_label(photo: UploadFile = File(...), u=Depends(me)):
+    """Label photo -> Medicine draft fields. Doctors only."""
+    if u.role != "doctor":
+        raise HTTPException(403, "Doctors only")
     fake = {"name": "Aspirin", "dose": "1 pill", "times": ["08:00", "20:00"],
             "expiration": str(date.today() + timedelta(days=180))}
     return try_ai(ai.read_label, photo.file.read(), fallback=fake)
@@ -465,7 +613,7 @@ def read_label(photo: UploadFile = File(...)):
 
 @app.post("/ai/ask")
 def ask(patient_id: int, audio: UploadFile = File(...)):
-    """Question audio -> answer text + MP3 url, answered from the dose log."""
+    """Cabinet: question audio -> answer text + MP3 url, answered from the dose log."""
     get_patient(patient_id)
     question = try_ai(ai.transcribe, audio.file.read(), fallback="Did I take my pill today?")
     text = try_ai(ai.answer, question, dose_log(patient_id),
@@ -473,7 +621,7 @@ def ask(patient_id: int, audio: UploadFile = File(...)):
     return {"text": text, "audio_url": speech_url(text)}
 
 
-# --- Cabinet -----------------------------------------------------------------
+# --- Cabinet (login-free: the Pi and its touchscreen) ---------------------------
 @app.get("/cabinet/{patient_id}/command")
 def cabinet_command(patient_id: int):
     """Pi only. Each command is handed out once."""
@@ -485,6 +633,22 @@ def cabinet_command(patient_id: int):
 def cabinet_state(patient_id: int):
     """Cabinet screen only. Read-only, safe to poll."""
     return mem["state"].get(patient_id, idle_state())
+
+
+@app.get("/cabinet/{patient_id}/today")
+def cabinet_today(patient_id: int):
+    """Cabinet screen: whose cabinet, the boxes and the dose log."""
+    p = get_patient(patient_id)
+    return {"name": p.name, "medicines": medicines_of(p.id), "doses": doses_of(p.id)}
+
+
+@app.post("/cabinet/{patient_id}/taken")
+def cabinet_taken(patient_id: int, dose_id: int) -> DoseLog:
+    """Cabinet screen: "I took it"."""
+    dose = get_dose(dose_id)
+    if get_medicine(dose.medicine_id).patient_id != patient_id:
+        raise HTTPException(404, f"dose {dose_id} is not in this cabinet")
+    return mark_taken(dose, "screen")
 
 
 @app.post("/cabinet/{patient_id}/photo")
@@ -505,7 +669,7 @@ def cabinet_photo(patient_id: int, dose_id: int, phase: Literal["before", "after
     return {"count": counts[phase]}
 
 
-# --- Demo controls -------------------------------------------------------------
+# --- Demo controls (login-free so the Pi team can curl them) --------------------
 @app.post("/demo/pill_time")
 def demo_pill_time(medicine_id: int) -> DoseLog:
     """Start a dose right now instead of waiting for its scheduled time."""
@@ -514,6 +678,7 @@ def demo_pill_time(medicine_id: int) -> DoseLog:
 
 @app.post("/demo/reset")
 def demo_reset():
+    """Reload the demo people. Logs everyone out."""
     seed()
     return {"ok": True}
 

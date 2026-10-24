@@ -73,17 +73,35 @@ Rules that stop overlap:
 
 Minh Dau's first job is making **every route below return fake data within the first hour**, so Minh Pham and Thanh can build against it right away. Then fill in the real logic behind the same shapes.
 
-### Data + doctor dashboard (used by Minh Pham)
+### Accounts and auth
 
-| Route | Returns |
-|---|---|
-| `GET /patients?doctor_id=1` | `[Patient]` |
-| `POST /patients` | `Patient` with `id` |
-| `GET /patients/{id}/medicines` | `[Medicine]` |
-| `POST /medicines` | `Medicine` with `id` |
-| `GET /patients/{id}/doses` | `[DoseLog]` newest first |
-| `GET /alerts?since=<iso time>` | `[Alert]` (dashboard polls every 3 s for "live" alerts) |
-| `POST /ai/label` (photo) | `{name, dose, times, expiration}` draft; dashboard pre-fills the add-medicine form, doctor fixes slot/pills/color, then `POST /medicines` |
+Data lives in Tiger Data (Postgres, `DATABASE_URL` in `.env`). **Run only one backend per database**: two backends both run the scheduler and double-send (a backend with a different clock marks every new dose missed at once).
+
+One `users` table, one role per account. Patient: `age`, `doctor_id`. Family: `patient_id`. Demo accounts (password `demo1234`): `doctor@demo.com`, `lan@demo.com` (patient 1), `minh@demo.com` (Lan's family).
+
+App and dashboard routes need `Authorization: Bearer <token>` (401 without it). Cabinet routes and `/demo/*` are login-free.
+
+| Route | Who | Returns |
+|---|---|---|
+| `POST /signup` `{role, name, email, password, age?, doctor_email?, patient_email?}` | anyone | `{token, user}`. Patient needs `age` + an existing doctor's email; family needs an existing patient's email. 409 if the email is taken |
+| `POST /login` `{email, password}` | anyone | `{token, user}`; 401 "Wrong email or password" |
+| `POST /logout`, `GET /me` | logged in | `{ok}`, the `User` |
+| `GET /contacts` | logged in | `[{user, unread, last}]`: their care circle. Doctor: patients + their families. Patient: doctor + family. Family: patient + doctor |
+| `GET /messages?with_id=&since=` | logged in | `[Message]` `{id, from_id, to_id, text, at}` oldest first; with `with_id`, also marks that person's messages read |
+| `POST /messages` `{to_id, text}` | logged in | `Message`; 403 outside the circle; pushes to `to_id` |
+| `GET /alerts?since=` | logged in | Doctor: every alert about their patients. Family: their patient's family alerts. Patient: `[]` |
+| `POST /push/register` `{token}` | logged in | Expo push token, kept on this login (logout stops pushes) |
+
+### Data + doctor dashboard
+
+| Route | Who | Returns |
+|---|---|---|
+| `GET /patients/{id}/medicines`, `GET /patients/{id}/doses` | patient, their family, their doctor | `[Medicine]`, `[DoseLog]` newest first |
+| `POST /medicines` | the patient's doctor | `Medicine` with `id`; 409 if the slot is taken |
+| `PATCH /medicines/{id}` (any fields) | the patient's doctor | updated `Medicine` (refill = `pills_left`) |
+| `DELETE /medicines/{id}` | the patient's doctor | `{ok}`; its doses go too |
+| `POST /doses/{id}/taken` | the patient | `DoseLog` (phone "I took it") |
+| `POST /ai/label` (photo) | doctors | `{name, dose, times, expiration}` draft for the add-medicine form |
 
 ### Cabinet: two pollers, two routes
 
@@ -94,26 +112,14 @@ The Pi and the cabinet screen both poll. If they share one route, whoever reads 
 | `GET /cabinet/{id}/command` | **Pi only.** Each command is given out once | `{}` or `{"dose_id": 7, "open_slot": 2, "say_url": "/audio/7.mp3", "sound": "time_for_pill"}` |
 | `GET /cabinet/{id}/state` | **Screen only.** Read-only, safe to poll | `{"mode": "idle" \| "take" \| "taken" \| "already_took" \| "missed", "dose_id", "slot", "medicine", "color", "message"}` |
 | `POST /cabinet/{id}/photo?dose_id=7&phase=before\|after` (photo) | Pi | `{"count": 10}` or `{"count": null}` if counting failed; after the "after" photo the backend decides taken (before − after == 1). Never guesses: on `null` the dose stays pending until "I took it" |
-| `POST /doses/{dose_id}/taken?method=screen` | Screen "I took it" button | updated `DoseLog` |
+| `GET /cabinet/{id}/today` | Screen | `{name, medicines, doses}` |
+| `POST /cabinet/{id}/taken?dose_id=7` | Screen "I took it" button | updated `DoseLog` |
 | `POST /ai/ask?patient_id=1` (audio) | Pi | `{"text": "...", "audio_url": "/audio/q12.mp3"}` |
 | `GET /audio/{file}.mp3` | Pi | MP3 the backend made with `speak()` |
 
 `open_slot` is optional: a command without it (e.g. `{"dose_id": 7, "say_url": null, "sound": "missed"}`) only plays audio. The same dose can arrive again as a repeat reminder. `sound` is one of `time_for_pill`, `good_job`, `already_took`, `missed`. If `say_url` fails to download, the Pi plays its stored file with that name.
 
-### Accounts, chat + push
-
-Data lives in Tiger Data (Postgres, `DATABASE_URL` in `.env`). One `users` table: each account has one role. Patient: `age`, `doctor_id`. Family: `patient_id`. Demo emails: `doctor@demo.com`, `lan@demo.com` (patient 1), `minh@demo.com` (Lan's family).
-
-| Route | Returns |
-|---|---|
-| `POST /login` body `{email}` | the `User` (`Doctor` / `Patient` / `Family`, by `role`), 404 if no account |
-| `GET /users/{id}/contacts` | `[User]` assigned to them. Doctor: their patients + those patients' family. Patient: doctor + family. Family: patient + doctor |
-| `GET /users/{id}/messages?with_id=&since=` | `[Message]` `{id, from_id, to_id, text, at}` oldest first (all of theirs, or only with `with_id`) |
-| `POST /users/{id}/messages` body `{to_id, text}` | `Message`; 403 if `to_id` is not one of their contacts; pushes to `to_id` |
-| `POST /push/register` | body `{user_id, token}` (Expo push token) |
-| `GET /doctors` | `[Doctor]` |
-
-Every alert now goes to the app (dashboard + push to that role's phones) **and** by SMS. Pill time pushes to the patient's phone too.
+Every alert goes to the dashboard and by push to that role's phones. Pill time pushes to the patient's phone too.
 
 ### Demo controls (Minh Dau)
 

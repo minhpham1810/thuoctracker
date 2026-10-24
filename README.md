@@ -33,7 +33,7 @@ Nothing talks directly to anything else. The cabinet, screens, phones and AI all
  │ Pi cabinet   pi/   ├────►│ backend/ FastAPI :8000 ├────►│ Gemini             │
  │ servos, camera,    │     │  routes + rules        │     │ labels, pill count,│
  │ mic, speaker       │     │  scheduler (every 2 s) │     │ speech, answers    │
- └────────────────────┘     │  in-memory data        │     ├────────────────────┤
+ └────────────────────┘     │  Tiger Data (Postgres) │     ├────────────────────┤
                             │  /audio/*.mp3          ├────►│ ElevenLabs  voice  │
  ┌────────────────────┐     │                        │     ├────────────────────┤
  │ Phones  app/ Expo  │◄───►│  ai/ pure functions    ├────►│ Expo push          │
@@ -103,7 +103,7 @@ cd app && npm install && cd ..
 # Windows: .venv\Scripts\python -m uvicorn backend.main:app --reload --host 0.0.0.0
 ```
 
-API docs: `http://localhost:8000/docs`. Restart after editing `.env` (`--reload` only watches `.py`).
+API docs: `http://localhost:8000/docs`. Data is in Tiger Data (`DATABASE_URL` in `.env`). **Run only one backend per database**: a second one (e.g. a teammate's laptop with the same `.env`) runs its own scheduler and double-sends alerts. Check the API end to end with `.venv/bin/python -m backend.test_api` (resets the demo data). Restart after editing `.env` (`--reload` only watches `.py`).
 
 **2. Web: doctor dashboard + cabinet screen (port 3000)**
 
@@ -119,7 +119,7 @@ Dashboard `http://localhost:3000/doctor`, cabinet `http://<laptop-ip>:3000/cabin
 cd app && npx expo start          # or: npx expo start --tunnel   if the phone can't load it
 ```
 
-Install **Expo Go** on the phone, scan the QR code (iPhone: Camera app; Android: inside Expo Go). On the login screen enter `http://<laptop-ip>:8000` and an email: `lan@demo.com` (patient), `minh@demo.com` (family) or `doctor@demo.com` (doctor). On a computer, `npx expo start --web` runs the same app in the browser. Check the phone can reach the backend by opening `http://<laptop-ip>:8000/health` in its browser. Allow Python and Node through Windows Firewall when asked.
+Install **Expo Go** on the phone, scan the QR code (iPhone: Camera app; Android: inside Expo Go). On the login screen check the server (`http://<laptop-ip>:8000`) and log in: `lan@demo.com` (patient), `minh@demo.com` (family) or `doctor@demo.com` (doctor), password `demo1234`. New people tap **Create an account**, in this order: doctor, then patient (enters the doctor's email), then family (enters the patient's email). The app stays logged in. On a computer, `npx expo start --web` runs the same app in the browser; the doctor's full workspace is the dashboard at `:3000/doctor` (same login). Check the phone can reach the backend by opening `http://<laptop-ip>:8000/health` in its browser. Allow Python and Node through Windows Firewall when asked.
 
 Notifications: in Expo Go they show while the app is running. Real push needs `npx eas init` in `app/` (Expo account), and on Android a development build (`npx eas build --profile development --platform android`).
 
@@ -128,4 +128,4 @@ Use a 2.4 GHz phone hotspot for the laptop and the Pi, not campus WiFi.
 
 ## Status
 
-Working end to end on in-memory sample data. Live progress and who is doing what: `TEAM.md`.
+Working end to end on Tiger Data with sign-up, login and chat. Live progress and who is doing what: `TEAM.md`.

@@ -49,8 +49,16 @@ CREATE TABLE IF NOT EXISTS messages (
   to_id int NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   text text NOT NULL, at timestamp NOT NULL
 );
--- no FK to users: /demo/reset truncates users but phones should stay registered
-CREATE TABLE IF NOT EXISTS push_tokens (token text PRIMARY KEY, user_id int NOT NULL);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash text;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS read_at timestamp;
+-- one row per logged-in device; push_token here so logging out stops that phone's pushes
+CREATE TABLE IF NOT EXISTS sessions (
+  token text PRIMARY KEY,
+  user_id int NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  push_token text,
+  created_at timestamp NOT NULL
+);
+DROP TABLE IF EXISTS push_tokens;
 """
 
 

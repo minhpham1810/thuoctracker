@@ -4,10 +4,10 @@ import { api, day, hhmm } from './api';
 import { usePoll } from './hooks';
 import { colors } from './ui';
 
-// 1:1 chat between the user and one of the people assigned to them.
+// 1:1 chat with someone in the user's care circle. Fetching it marks their messages read.
 export default function Chat({ user, other }) {
   const [tick, setTick] = useState(0); // bump to refetch right after sending
-  const [messages] = usePoll(() => api.messages(user.id, other.id), [other.id, tick], 2000);
+  const [messages] = usePoll(() => api.messages(other.id), [other.id, tick], 2000);
   const [text, setText] = useState('');
   const list = useRef(null);
 
@@ -18,7 +18,7 @@ export default function Chat({ user, other }) {
     if (!t) return;
     setText('');
     try {
-      await api.sendMessage(user.id, other.id, t);
+      await api.sendMessage(other.id, t);
       setTick((x) => x + 1);
     } catch {
       setText(t); // keep it so they can retry

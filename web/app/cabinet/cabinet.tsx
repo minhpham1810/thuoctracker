@@ -40,6 +40,7 @@ export default function Cabinet() {
   const [state, setState] = useState<CabinetState | null>(null);
   const [meds, setMeds] = useState<Medicine[]>([]);
   const [doses, setDoses] = useState<DoseLog[]>([]);
+  const [name, setName] = useState("");
   const [online, setOnline] = useState(true);
   const [now, setNow] = useState<Date | null>(null); // null until mounted, so server and client HTML match
   const [sending, setSending] = useState(false);
@@ -75,10 +76,13 @@ export default function Cabinet() {
   const loadMeds = useCallback(async () => {
     if (!patientId) return;
     // box labels and today's list are display only; on failure keep the last ones
-    await Promise.all([
-      api<Medicine[]>(`/patients/${patientId}/medicines`).then(setMeds).catch(() => {}),
-      api<DoseLog[]>(`/patients/${patientId}/doses`).then(setDoses).catch(() => {}),
-    ]);
+    const t = await api<{ name: string; medicines: Medicine[]; doses: DoseLog[] }>(`/cabinet/${patientId}/today`)
+      .catch(() => null);
+    if (t) {
+      setName(t.name);
+      setMeds(t.medicines);
+      setDoses(t.doses);
+    }
   }, [patientId]);
 
   useEffect(() => {
@@ -133,7 +137,7 @@ export default function Cabinet() {
   async function tookIt() {
     if (!state?.dose_id) return;
     setSending(true);
-    await api(`/doses/${state.dose_id}/taken?method=screen`, { method: "POST" }).catch(() => setOnline(false));
+    await api(`/cabinet/${patientId}/taken?dose_id=${state.dose_id}`, { method: "POST" }).catch(() => setOnline(false));
     await loadState();
     setSending(false);
   }
@@ -205,7 +209,7 @@ export default function Cabinet() {
           onClick={() => { setDetail(null); setSheet({ view: "menu" }); }}>
           <Glyph name="menu" /> Menu
         </button>
-        <span className="cab-brand"><Logo size={28} /> ThuocTracker</span>
+        <span className="cab-brand"><Logo size={28} /> {name || "ThuocTracker"}</span>
         {now && (
           <span className="cab-clock">
             {now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}

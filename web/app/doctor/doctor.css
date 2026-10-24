@@ -168,3 +168,34 @@ label.field small { font-weight: 400; color: var(--muted); }
 .cam-test { display: grid; gap: 10px; }
 .cam-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
 .cam-test label:has(input:disabled) { opacity: .6; cursor: default; }
+
+/* Family under the patient name */
+.family { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.family li { display: flex; align-items: center; gap: 8px; }
+.family small { color: var(--muted); }
+.rx-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Alerts | Messages tabs */
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: -4px 0 4px; }
+.tabs button { flex: 1; display: flex; justify-content: center; align-items: center; gap: 6px; padding: 8px; border: 0;
+  border-bottom: 3px solid transparent; background: none; font-weight: 600; color: var(--muted); }
+.tabs button[aria-selected="true"] { color: var(--primary); border-bottom-color: var(--primary); }
+
+/* Chat */
+.chat-list { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 4px; }
+.chat-list button { width: 100%; display: flex; align-items: center; gap: 8px; text-align: left; padding: 10px;
+  border: 0; border-radius: 10px; background: none; }
+.chat-list button:hover { background: var(--primary-soft); }
+.chat-list button > span:first-child { flex: 1; min-width: 0; display: grid; }
+.chat-list small, .chat-last { color: var(--muted); font-size: .8125rem; }
+.chat-last { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.thread { display: grid; gap: 8px; margin-top: 8px; }
+.thread-head { display: flex; align-items: center; gap: 10px; }
+.bubbles { display: flex; flex-direction: column; gap: 6px; max-height: calc(100vh - 300px); min-height: 160px; overflow-y: auto; padding: 4px 0; }
+.bubble { margin: 0; max-width: 85%; align-self: flex-start; padding: 8px 12px; border-radius: 14px; background: var(--bg);
+  border: 1px solid var(--border); overflow-wrap: anywhere; }
+.bubble small { display: block; font-size: .6875rem; color: var(--muted); margin-top: 2px; }
+.bubble.mine { align-self: flex-end; background: var(--primary); border-color: var(--primary); color: #fff; }
+.bubble.mine small { color: rgb(255 255 255 / .8); }
+.thread-send { display: flex; gap: 8px; }
+.thread-send input { flex: 1; min-width: 0; min-height: 36px; padding: 0 12px; border: 1px solid var(--border); border-radius: 10px; }

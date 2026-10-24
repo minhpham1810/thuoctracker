@@ -8,6 +8,7 @@ Smart pill cabinet (Raspberry Pi 5) + doctor web dashboard + family push alerts.
 - **The AI never changes a dose.** It reminds and alerts only. Voice answers come from the real dose log, never invented.
 - **No AI on the Pi** (1GB RAM). The Pi takes photos/recordings and sends them to the backend; the backend calls Gemini and ElevenLabs.
 - **Only the backend talks to the DB and sends push notifications.** Cabinet, screens and AI go through the API.
+- **Auth:** app and dashboard routes need `Authorization: Bearer <token>` from `/login` or `/signup`; cabinet routes (Pi + touchscreen) and `/demo/*` are login-free. Run only one backend per Tiger database.
 - Demo network is a 2.4 GHz phone hotspot, never campus WiFi.
 
 ## Team sync (read this first)

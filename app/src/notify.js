@@ -36,7 +36,7 @@ export const hasRealPush = () => pushWorks;
 let bannerListener = null;
 export const onBanner = (fn) => { bannerListener = fn; };
 
-export async function setupNotifications(userId) {
+export async function setupNotifications() {
   if (!Notifications) return;
   try {
     if (Platform.OS === 'android') {
@@ -53,7 +53,7 @@ export async function setupNotifications(userId) {
     const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
     if (!projectId) return; // no Expo project yet: local notifications only
     const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
-    await api.registerPush(userId, token);
+    await api.registerPush(token); // saved on this login's session
     pushWorks = true;
   } catch (e) {
     console.log('[push] not available, using local notifications:', e.message);

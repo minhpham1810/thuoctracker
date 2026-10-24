@@ -5,10 +5,13 @@ from typing import Annotated, Literal, Optional, Union
 from pydantic import BaseModel, Field
 
 Role = Literal["patient", "family", "doctor"]
+Slot = Literal[1, 2, 3, 4, 5, 6, 7]  # boxes 1-3 top row, 4-6 middle row, 7 the long bottom box
+# validated here because one bad time string would crash the scheduler for every patient
+HHMM = Annotated[str, Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")]
 
 
 class User(BaseModel):
-    """One account = one role. Log in by email."""
+    """One account = one role. Log in with email + password."""
     id: Optional[int] = None
     email: str
     name: str
@@ -33,16 +36,47 @@ class Family(User):
 AnyUser = Annotated[Union[Doctor, Patient, Family], Field(discriminator="role")]
 
 
+class Signup(BaseModel):
+    role: Role
+    name: str = Field(min_length=1)
+    email: str
+    password: str = Field(min_length=6)
+    age: Optional[int] = Field(None, ge=1, le=130)  # patient
+    doctor_email: Optional[str] = None   # patient: their doctor's account
+    patient_email: Optional[str] = None  # family: the patient's account
+
+
+class Credentials(BaseModel):
+    email: str
+    password: str
+
+
+class Session(BaseModel):
+    token: str  # send as "Authorization: Bearer <token>"
+    user: AnyUser
+
+
 class Medicine(BaseModel):
     id: Optional[int] = None
     patient_id: int
-    name: str
+    name: str = Field(min_length=1)
     dose: str  # e.g. "1 pill"
-    times: list[str]  # e.g. ["08:00", "20:00"]
-    slot: Literal[1, 2, 3, 4, 5, 6, 7]  # boxes 1-3 top row, 4-6 middle row, 7 the long bottom box
-    pills_left: int
+    times: list[HHMM] = Field(min_length=1)  # e.g. ["08:00", "20:00"]
+    slot: Slot
+    pills_left: int = Field(ge=0)
     expiration: date
     color: str  # shown on the cabinet screen
+
+
+class MedicineUpdate(BaseModel):
+    """PATCH body: only the fields that change (refill = pills_left)."""
+    name: Optional[str] = Field(None, min_length=1)
+    dose: Optional[str] = None
+    times: Optional[list[HHMM]] = Field(None, min_length=1)
+    slot: Optional[Slot] = None
+    pills_left: Optional[int] = Field(None, ge=0)
+    expiration: Optional[date] = None
+    color: Optional[str] = None
 
 
 class DoseLog(BaseModel):
@@ -55,17 +89,23 @@ class DoseLog(BaseModel):
 
 
 class Message(BaseModel):
-    """1:1 chat line between two people assigned to each other (see contacts in main.py)."""
+    """1:1 chat line between two people in the same care circle."""
     id: Optional[int] = None
-    from_id: Optional[int] = None  # set by the backend from the URL
+    from_id: Optional[int] = None  # set by the backend from the session
     to_id: int
     text: str
     at: Optional[datetime] = None  # set by the backend
 
 
+class Contact(BaseModel):
+    """Someone in my care circle, with our chat state."""
+    user: AnyUser
+    unread: int = 0  # their messages to me I haven't opened
+    last: Optional[Message] = None
+
+
 class PushToken(BaseModel):
-    """Expo push token from the mobile app."""
-    user_id: int
+    """Expo push token from the mobile app; stored on the caller's session."""
     token: str
 
 

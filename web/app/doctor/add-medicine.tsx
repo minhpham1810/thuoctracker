@@ -6,15 +6,20 @@ import { api, LONG_SLOT, PILL_COLOR_NAMES, SLOTS, type LabelDraft, type Medicine
 
 const TIMES = /^\s*\d{2}:\d{2}(\s*,\s*\d{2}:\d{2})*\s*$/;
 
-// Label photo -> /ai/label draft -> doctor checks it -> POST /medicines.
-export default function AddMedicine({ patient, meds, onClose, onSaved }: {
-  patient: Patient; meds: Medicine[]; onClose: () => void; onSaved: () => void;
+// Add: label photo -> /ai/label draft -> doctor checks it -> POST /medicines.
+// Edit (med given): same form prefilled -> PATCH /medicines/{id}; refill = change "Pills in slot".
+export default function AddMedicine({ patient, meds, med, onClose, onSaved }: {
+  patient: Patient; meds: Medicine[]; med?: Medicine; onClose: () => void; onSaved: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const freeSlots = SLOTS.filter((s) => !meds.some((m) => m.slot === s));
-  const [form, setForm] = useState({
+  const freeSlots = SLOTS.filter((s) => s === med?.slot || !meds.some((m) => m.slot === s));
+  const [form, setForm] = useState(med ? {
+    name: med.name, dose: med.dose, times: med.times.join(", "), slot: String(med.slot),
+    pills_left: String(med.pills_left), expiration: med.expiration, color: med.color,
+  } : {
     name: "", dose: "1 pill", times: "", slot: String(freeSlots[0] ?? ""), pills_left: "10", expiration: "", color: "blue",
   });
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const [note, setNote] = useState<{ text: string; ai?: boolean }>({ text: "Or fill the form by hand." });
   const [reading, setReading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -59,8 +64,8 @@ export default function AddMedicine({ patient, meds, onClose, onSaved }: {
     setSaving(true);
     setError("");
     try {
-      await api<Medicine>("/medicines", {
-        method: "POST",
+      await api<Medicine>(med ? `/medicines/${med.id}` : "/medicines", {
+        method: med ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           patient_id: patient.id,
@@ -80,27 +85,40 @@ export default function AddMedicine({ patient, meds, onClose, onSaved }: {
     }
   }
 
+  async function remove() {
+    if (!confirmRemove) return setConfirmRemove(true);
+    setSaving(true);
+    try {
+      await api(`/medicines/${med!.id}`, { method: "DELETE" });
+      onSaved();
+    } catch (e) {
+      setError((e as Error).message);
+      setSaving(false);
+    }
+  }
+
   return (
     <dialog ref={dialog} aria-labelledby="add-title" onClose={onClose}>
       <form onSubmit={save}>
         <div className="dialog-head">
-          <h3 id="add-title">Add medicine for {patient.name}</h3>
+          <h3 id="add-title">{med ? `Edit ${med.name}` : `Add medicine for ${patient.name}`}</h3>
           <button className="btn btn-sm" type="button" onClick={onClose} aria-label="Close">
             <Icon name="close" />
           </button>
         </div>
         <div className="dialog-body">
-          <label className="dropzone">
-            <Icon name="camera" />
-            <div>
-              <strong>{reading ? "Reading label…" : "Photo of the bottle label"}</strong>
-              <span>AI reads the name, dose, schedule and expiration</span>
-            </div>
-            <input type="file" accept="image/*" capture="environment" disabled={reading}
-              onChange={(e) => e.target.files?.[0] && readLabel(e.target.files[0])} />
-          </label>
-          <p className={`note${note.ai ? " ai" : ""}`} aria-live="polite">{note.text}</p>
-
+          {!med && (<>
+            <label className="dropzone">
+              <Icon name="camera" />
+              <div>
+                <strong>{reading ? "Reading label…" : "Photo of the bottle label"}</strong>
+                <span>AI reads the name, dose, schedule and expiration</span>
+              </div>
+              <input type="file" accept="image/*" capture="environment" disabled={reading}
+                onChange={(e) => e.target.files?.[0] && readLabel(e.target.files[0])} />
+            </label>
+            <p className={`note${note.ai ? " ai" : ""}`} aria-live="polite">{note.text}</p>
+          </>)}
           <div className="fields">
             <label className="field full">Medicine name
               <input value={form.name} onChange={set("name")} required autoComplete="off" />
@@ -131,9 +149,14 @@ export default function AddMedicine({ patient, meds, onClose, onSaved }: {
           {error && <p className="form-error" role="alert">{error}</p>}
         </div>
         <div className="dialog-foot">
+          {med && (
+            <button className="btn" type="button" onClick={remove} disabled={saving} style={{ marginRight: "auto", color: "var(--bad)" }}>
+              {confirmRemove ? "Click again to remove" : "Remove from cabinet"}
+            </button>
+          )}
           <button className="btn" type="button" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" type="submit" disabled={saving || reading || !freeSlots.length}>
-            {saving ? "Saving…" : "Save to cabinet"}
+            {saving ? "Saving…" : med ? "Save changes" : "Save to cabinet"}
           </button>
         </div>
       </form>

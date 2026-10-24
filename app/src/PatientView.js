@@ -1,15 +1,18 @@
+import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { api, day, hhmm } from './api';
 import { usePoll } from './hooks';
-import { Card, colors, Dot, Pill, statusColor, Title } from './ui';
+import { Button, Card, colors, Dot, Pill, statusColor, Title } from './ui';
 
 // "Today" for one patient: pill-time banner, medicines, alerts (family only), dose history.
 export default function PatientView({ user, patientId }) {
+  const [tick, setTick] = useState(0); // bump to refetch right after "I took it"
+  const [saving, setSaving] = useState(false);
   const [data, error] = usePoll(async () => {
     const [meds, doses, alerts, cabinet] = await Promise.all([
       api.medicines(patientId), api.doses(patientId), api.alerts(), api.cabinetState(patientId)]);
     return { meds, doses, cabinet, alerts: alerts.filter((a) => a.patient_id === patientId).reverse() };
-  }, [patientId]);
+  }, [patientId, tick]);
 
   if (!data) return <Text style={s.loading}>{error ? `Can't reach the backend (${error})` : 'Loading…'}</Text>;
   const medName = Object.fromEntries(data.meds.map((m) => [m.id, m]));
@@ -22,6 +25,14 @@ export default function PatientView({ user, patientId }) {
         <Card style={[s.banner, { borderColor: colors.pending }]}>
           <Text style={[s.bannerText, big && { fontSize: 26 }]}>💊 {data.cabinet.message}</Text>
           <Text style={s.muted}>Slot {data.cabinet.slot} is open on the cabinet</Text>
+          {big && (
+            <Button title={saving ? 'Saving…' : 'I took it'} big onPress={async () => {
+              setSaving(true);
+              await api.took(data.cabinet.dose_id).catch(() => {});
+              setSaving(false);
+              setTick((x) => x + 1);
+            }} />
+          )}
         </Card>
       )}
       {data.cabinet.mode === 'missed' && (

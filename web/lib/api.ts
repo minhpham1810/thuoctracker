@@ -1,8 +1,16 @@
 // Types mirror backend/models.py and the contract in TEAM.md. Change them there first.
 
-// One account = one role; log in by email (POST /login).
-export type User = { id: number; email: string; name: string; role: "patient" | "family" | "doctor" };
-export type Patient = User & { role: "patient"; age: number; doctor_id: number };
+// One account = one role; log in with email + password (POST /login or /signup -> Session).
+type Base = { id: number; email: string; name: string };
+export type Doctor = Base & { role: "doctor" };
+export type Patient = Base & { role: "patient"; age: number; doctor_id: number };
+export type Family = Base & { role: "family"; patient_id: number };
+export type User = Doctor | Patient | Family;
+export type Session = { token: string; user: User };
+
+export type Message = { id: number; from_id: number; to_id: number; text: string; at: string };
+// Someone in my care circle (GET /contacts), with our chat state.
+export type Contact = { user: User; unread: number; last: Message | null };
 
 // Cabinet boxes: 1-3 top row, 4-6 middle row, 7 the long box across the bottom.
 export const SLOTS = [1, 2, 3, 4, 5, 6, 7] as const;
@@ -33,8 +41,17 @@ export type CabinetState = {
 // ai.read_label returns null for anything it couldn't read
 export type LabelDraft = { name: string | null; dose: string | null; times: string[] | null; expiration: string | null };
 
+// The dashboard sets the session token; the cabinet screen never does (its routes are login-free).
+let token: string | null = null;
+let unauthorized: (() => void) | null = null;
+export const setToken = (t: string | null) => { token = t; };
+export const onUnauthorized = (fn: (() => void) | null) => { unauthorized = fn; };
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(`/api${path}`, { cache: "no-store", ...init });
+  const headers = new Headers(init?.headers);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const r = await fetch(`/api${path}`, { cache: "no-store", ...init, headers });
+  if (r.status === 401 && token) unauthorized?.();
   if (!r.ok) {
     const detail = (await r.json().catch(() => null))?.detail;
     // FastAPI sends a string for HTTPException and a list for validation errors

@@ -6,22 +6,31 @@ import Constants from 'expo-constants';
 // (in a browser: the page's own host).
 const devHost = Constants.expoConfig?.hostUri?.split(':')[0] ?? globalThis.location?.hostname;
 let base = process.env.EXPO_PUBLIC_BACKEND_URL || (devHost ? `http://${devHost}:8000` : 'http://192.168.137.1:8000');
+let token = null; // session token from /login or /signup
+let unauthorized = null;
 
 export const setBaseUrl = (url) => { base = url.trim().replace(/\/+$/, ''); };
 export const getBaseUrl = () => base;
+export const setToken = (t) => { token = t; };
+export const onUnauthorized = (fn) => { unauthorized = fn; }; // session gone: back to login
 
 async function call(method, path, body) {
   // fetch has no timeout of its own; a wrong IP would hang for a minute with no feedback
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 6000);
   try {
+    const headers = {};
+    if (body) headers['Content-Type'] = 'application/json';
+    if (token) headers.Authorization = `Bearer ${token}`;
     const res = await fetch(base + path, {
-      method,
-      signal: ctrl.signal,
-      headers: body ? { 'Content-Type': 'application/json' } : undefined,
-      body: body ? JSON.stringify(body) : undefined,
+      method, signal: ctrl.signal, headers, body: body ? JSON.stringify(body) : undefined,
     });
-    if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail || `${method} ${path}: ${res.status}`);
+    if (res.status === 401 && token) unauthorized?.();
+    if (!res.ok) {
+      const detail = (await res.json().catch(() => null))?.detail;
+      // FastAPI sends a string for HTTPException and a list for validation errors
+      throw new Error((Array.isArray(detail) ? detail.map((d) => d.msg).join('; ') : detail) || `${method} ${path}: ${res.status}`);
+    }
     return res.json();
   } catch (e) {
     throw new Error(e.name === 'AbortError' ? 'timed out' : e.message);
@@ -31,16 +40,20 @@ async function call(method, path, body) {
 }
 
 export const api = {
-  login: (email) => call('POST', '/login', { email }),
-  contacts: (userId) => call('GET', `/users/${userId}/contacts`),
+  signup: (form) => call('POST', '/signup', form),
+  login: (email, password) => call('POST', '/login', { email, password }),
+  logout: () => call('POST', '/logout'),
+  me: () => call('GET', '/me'),
+  contacts: () => call('GET', '/contacts'), // [{user, unread, last}]
+  // all of my messages, or only the ones with withId (which marks theirs read)
+  messages: (withId) => call('GET', `/messages${withId ? `?with_id=${withId}` : ''}`),
+  sendMessage: (toId, text) => call('POST', '/messages', { to_id: toId, text }),
+  alerts: () => call('GET', '/alerts'),
   medicines: (pid) => call('GET', `/patients/${pid}/medicines`),
   doses: (pid) => call('GET', `/patients/${pid}/doses`),
-  alerts: () => call('GET', '/alerts'),
+  took: (doseId) => call('POST', `/doses/${doseId}/taken`),
   cabinetState: (pid) => call('GET', `/cabinet/${pid}/state`),
-  // all of my messages, or only the ones with withId
-  messages: (userId, withId) => call('GET', `/users/${userId}/messages${withId ? `?with_id=${withId}` : ''}`),
-  sendMessage: (userId, toId, text) => call('POST', `/users/${userId}/messages`, { to_id: toId, text }),
-  registerPush: (userId, token) => call('POST', '/push/register', { user_id: userId, token }),
+  registerPush: (pushToken) => call('POST', '/push/register', { token: pushToken }),
 };
 
 // Backend times are local and naive ("2026-10-24T15:01:50.9"), so slice instead of new Date().
