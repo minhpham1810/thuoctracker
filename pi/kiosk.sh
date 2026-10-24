@@ -10,6 +10,13 @@ PLATFORM=x11
 [ -n "$WAYLAND_DISPLAY" ] && PLATFORM=wayland  # Pi 5 desktop (labwc) is Wayland
 
 until curl -s -o /dev/null -m 3 "$SCREEN_URL"; do sleep 3; done
+# keep the cabinet on the touchscreen: with a DSI panel up, switch other outputs off
+# (otherwise a plugged-in HDMI cable grabs the kiosk window)
+if command -v wlr-randr >/dev/null && wlr-randr | grep -q '^DSI'; then
+  for out in $(wlr-randr | grep -o '^[A-Z][^ ]*' | grep -v '^DSI'); do
+    wlr-randr --output "$out" --off
+  done
+fi
 # relaunch if Chromium crashes or someone closes it
 while true; do
   # the "Ask a question" button needs the mic: Chromium only allows it on https,
