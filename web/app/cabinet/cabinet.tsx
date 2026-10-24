@@ -12,6 +12,7 @@ const MEDS_MS = 10_000;
 const ASK_MAX_MS = 8000; // stop recording on its own if the patient doesn't tap again
 const ANSWER_MS = 15_000; // how long the answer stays on screen
 const DETAIL_MS = 15_000; // a tapped box's details close on their own
+const SHEET_MS = 30_000; // the menu and today's list close on their own (longer: there's more to read)
 const LOW = 5; // backend's low-pill rule; display only
 const EXPIRING_DAYS = 7; // backend's expiring-soon rule; display only
 
@@ -20,6 +21,15 @@ type Ask =
   | { phase: "listening" }
   | { phase: "thinking" }
   | { phase: "answer"; text: string };
+
+// Screen preferences, kept in this browser (the Pi) only
+type Theme = "auto" | "light" | "dark";
+type TextSize = "normal" | "large";
+const THEMES = ["auto", "light", "dark"] as const satisfies readonly Theme[];
+const TEXT_SIZES = ["normal", "large"] as const satisfies readonly TextSize[];
+const isNight = (d: Date) => d.getHours() >= 19 || d.getHours() < 7; // "auto": dark from 7 PM to 7 AM
+
+type Sheet = { view: "menu" } | { view: "today"; fromMenu: boolean };
 
 const MODE_ICON: Record<CabinetState["mode"], IconName> = {
   idle: "clock", take: "pill", taken: "check", already_took: "alert", missed: "x",
@@ -35,11 +45,19 @@ export default function Cabinet() {
   const [sending, setSending] = useState(false);
   const [ask, setAsk] = useState<Ask>({ phase: "off" });
   const [detail, setDetail] = useState<Slot | null>(null);
+  const [sheet, setSheet] = useState<Sheet | null>(null);
+  const [theme, setTheme] = useState<Theme>("auto");
+  const [textSize, setTextSize] = useState<TextSize>("normal");
   const recorder = useRef<MediaRecorder | null>(null);
   const closeDetail = useCallback(() => setDetail(null), []);
+  const closeSheet = useCallback(() => setSheet(null), []);
 
   useEffect(() => {
-    const t = setTimeout(() => setPatientId(Number(new URLSearchParams(location.search).get("patient")) || 1), 0);
+    const t = setTimeout(() => {
+      setPatientId(Number(new URLSearchParams(location.search).get("patient")) || 1);
+      setTheme(loadPref("cab-theme", THEMES, "auto"));
+      setTextSize(loadPref("cab-text", TEXT_SIZES, "normal"));
+    }, 0);
     return () => clearTimeout(t);
   }, []);
 
@@ -89,12 +107,28 @@ export default function Cabinet() {
     return () => clearTimeout(t);
   }, [detail]);
 
-  // a pill prompt closes any open box details for good, so they don't pop back after it
+  useEffect(() => {
+    if (sheet === null) return;
+    const t = setTimeout(() => setSheet(null), SHEET_MS);
+    return () => clearTimeout(t);
+  }, [sheet, theme, textSize]); // a tap on a setting restarts the timer
+
+  // a pill prompt closes any open box details or menu for good, so they don't pop back after it
   useEffect(() => {
     if (mode !== "take") return;
-    const t = setTimeout(() => setDetail(null), 0);
+    const t = setTimeout(() => { setDetail(null); setSheet(null); }, 0);
     return () => clearTimeout(t);
   }, [mode]);
+
+  function pickTheme(t: Theme) {
+    setTheme(t);
+    savePref("cab-theme", t);
+  }
+
+  function pickTextSize(s: TextSize) {
+    setTextSize(s);
+    savePref("cab-text", s);
+  }
 
   async function tookIt() {
     if (!state?.dose_id) return;
@@ -156,14 +190,22 @@ export default function Cabinet() {
   const lit = mode !== "idle" ? state?.slot ?? null : null;
   const dueMed = openSlot ? inSlot(openSlot) : undefined;
   const next = nextDose(meds, now);
-  const items = todayItems(meds, doses, now);
+  const today = todayItems(meds, doses, now);
+  const strip = stripItems(today, textSize === "large" ? 3 : 4); // fewer chips so larger names still fit
   const shown = detail !== null && mode !== "take" ? inSlot(detail) : undefined; // the pill prompt always wins
   const asking = ask.phase !== "off" && mode !== "take";
+  const dark = theme === "dark" || (theme === "auto" && now !== null && isNight(now));
+  const covered = !!shown || !!sheet; // while a card is open, only the card can be reached
 
   return (
-    <div className={`cab mode-${mode}`} style={{ "--pill": color } as React.CSSProperties}>
-      <header className="cab-bar" inert={!!shown}>
-        <span className="cab-brand"><Logo size={32} /> ThuocTracker</span>
+    <div className={`cab mode-${mode}${dark ? " dark" : ""}${textSize === "large" ? " text-large" : ""}`}
+      style={{ "--pill": color } as React.CSSProperties}>
+      <header className="cab-bar" inert={covered}>
+        <button type="button" className="cab-menu" aria-haspopup="dialog"
+          onClick={() => { setDetail(null); setSheet({ view: "menu" }); }}>
+          <Glyph name="menu" /> Menu
+        </button>
+        <span className="cab-brand"><Logo size={28} /> ThuocTracker</span>
         {now && (
           <span className="cab-clock">
             {now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
@@ -176,8 +218,7 @@ export default function Cabinet() {
         <div className="cab-offline" role="status"><Icon name="wifiOff" /> Connection lost. Reconnecting…</div>
       )}
 
-      {/* while a box's details are open, only the card can be reached */}
-      <main className="cab-main" inert={!!shown}>
+      <main className="cab-main" inert={covered}>
         <section className="cab-side">
           <div className="cab-hero" aria-live="assertive">
             {/* keyed so a new message plays its entrance once */}
@@ -230,23 +271,32 @@ export default function Cabinet() {
         </ol>
       </main>
 
-      <footer className="cab-today" inert={!!shown}>
-        <h2>Today</h2>
-        {items.length ? (
-          <ol>
-            {items.map((x) => (
-              <li key={x.key} className={`cab-chip ${x.status}`}
-                style={{ "--chip-pill": pillColor(x.color) } as React.CSSProperties}>
-                {x.status !== "later" && <Icon name={CHIP_ICON[x.status]} />}
-                <b>{clock(x.at)}</b> <span className="cab-chip-name">{x.name}</span>
-                <span className="cab-sr">, {CHIP_SAY[x.status]}</span>
-              </li>
-            ))}
-          </ol>
-        ) : <span className="cab-today-none">No pills today.</span>}
+      {/* The strip is one big button: tapping it shows every dose today */}
+      <footer className="cab-foot" inert={covered}>
+        <button type="button" className="cab-today" aria-haspopup="dialog"
+          onClick={() => setSheet({ view: "today", fromMenu: false })}>
+          <span className="cab-today-label">Today</span>
+          {strip.length ? strip.map((x) => (
+            <span key={x.key} className={`cab-chip ${x.status}`}
+              style={{ "--chip-pill": pillColor(x.color) } as React.CSSProperties}>
+              {x.status !== "later" && <Icon name={STATUS_ICON[x.status]} />}
+              <b>{clock(x.at)}</b> <span className="cab-chip-name">{x.name}</span>
+              <span className="cab-sr">, {STATUS_TEXT[x.status].toLowerCase()};</span>
+            </span>
+          )) : <span className="cab-today-none">No pills today.</span>}
+          <span className="cab-sr"> Show all of today&apos;s pills.</span>
+        </button>
       </footer>
 
       {shown && <Details m={shown} onClose={closeDetail} />}
+      {sheet?.view === "menu" && (
+        <Menu theme={theme} onTheme={pickTheme} textSize={textSize} onTextSize={pickTextSize}
+          onToday={() => setSheet({ view: "today", fromMenu: true })} onClose={closeSheet} />
+      )}
+      {sheet?.view === "today" && (
+        <TodayList items={today} onBack={sheet.fromMenu ? () => setSheet({ view: "menu" }) : undefined}
+          onClose={closeSheet} />
+      )}
     </div>
   );
 }
@@ -284,33 +334,148 @@ function Box({ slot, m, open, lit, dim, onTap }: {
   );
 }
 
-// Big read-only card for one box. Tapping anywhere closes it.
-function Details({ m, onClose }: { m: Medicine; onClose: () => void }) {
-  const days = daysUntil(m.expiration);
-  const close = useRef<HTMLButtonElement>(null);
+// A big card over everything. Focus goes to the [data-autofocus] button; Escape or a tap outside closes it.
+// tapToClose: tapping the card itself closes it too (read-only cards).
+function Modal({ label, pill, tapToClose = false, onClose, children }: {
+  label: string; pill?: string; tapToClose?: boolean; onClose: () => void; children: React.ReactNode;
+}) {
+  const card = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    close.current?.focus({ preventScroll: true });
+    card.current?.querySelector<HTMLElement>("[data-autofocus]")?.focus({ preventScroll: true });
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
   }, [onClose]);
   return (
-    <div className="cab-detail" role="dialog" aria-modal="true" aria-label={`Box ${m.slot}: ${m.name}`} onClick={onClose}>
-      <div className="cab-detail-card" style={{ "--box-pill": pillColor(m.color) } as React.CSSProperties}>
-        <p className="cab-detail-box">Box {m.slot}{m.slot === LONG_SLOT ? ", the long box" : ""}</p>
-        <h2><span className="cab-pill" aria-hidden="true" />{m.name}</h2>
-        <dl>
-          <dt>Take</dt><dd>{m.dose}</dd>
-          <dt>When</dt><dd>{m.times.map(clock).join(" · ")}</dd>
-          <dt>Pills left</dt>
-          <dd className={m.pills_left < LOW ? "warn" : undefined}>{m.pills_left}{m.pills_left < LOW && " · Refill soon"}</dd>
-          <dt>Expires</dt>
-          <dd className={days <= EXPIRING_DAYS ? "warn" : undefined}>{fmtDate(m.expiration)}{days <= EXPIRING_DAYS && ` · ${expiresIn(days, true)}`}</dd>
-        </dl>
-        <button type="button" className="cab-detail-close" ref={close}><Icon name="close" /> Close</button>
+    <div className="cab-detail" role="dialog" aria-modal="true" aria-label={label} onClick={onClose}>
+      <div className="cab-detail-card" ref={card} onClick={tapToClose ? undefined : (e) => e.stopPropagation()}
+        style={pill ? ({ "--box-pill": pill } as React.CSSProperties) : undefined}>
+        {children}
       </div>
     </div>
   );
+}
+
+// Big read-only card for one box. Tapping anywhere closes it.
+function Details({ m, onClose }: { m: Medicine; onClose: () => void }) {
+  const days = daysUntil(m.expiration);
+  return (
+    <Modal label={`Box ${m.slot}: ${m.name}`} pill={pillColor(m.color)} tapToClose onClose={onClose}>
+      <p className="cab-detail-box">Box {m.slot}{m.slot === LONG_SLOT ? ", the long box" : ""}</p>
+      <h2><span className="cab-pill" aria-hidden="true" />{m.name}</h2>
+      <dl>
+        <dt>Take</dt><dd>{m.dose}</dd>
+        <dt>When</dt><dd>{m.times.map(clock).join(" · ")}</dd>
+        <dt>Pills left</dt>
+        <dd className={m.pills_left < LOW ? "warn" : undefined}>{m.pills_left}{m.pills_left < LOW && " · Refill soon"}</dd>
+        <dt>Expires</dt>
+        <dd className={days <= EXPIRING_DAYS ? "warn" : undefined}>{fmtDate(m.expiration)}{days <= EXPIRING_DAYS && ` · ${expiresIn(days, true)}`}</dd>
+      </dl>
+      <button type="button" className="cab-detail-close" data-autofocus><Icon name="close" /> Close</button>
+    </Modal>
+  );
+}
+
+// Screen settings and today's full list. Never anything that changes a dose.
+function Menu({ theme, onTheme, textSize, onTextSize, onToday, onClose }: {
+  theme: Theme; onTheme: (t: Theme) => void; textSize: TextSize; onTextSize: (s: TextSize) => void;
+  onToday: () => void; onClose: () => void;
+}) {
+  const themes: { v: Theme; label: string; icon: React.ReactNode }[] = [
+    { v: "light", label: "Light", icon: <Glyph name="sun" /> },
+    { v: "dark", label: "Dark", icon: <Glyph name="moon" /> },
+    { v: "auto", label: "Auto", icon: <Icon name="clock" /> },
+  ];
+  return (
+    <Modal label="Menu" onClose={onClose}>
+      <h2>Menu</h2>
+      <div className="cab-opt" role="group" aria-labelledby="cab-opt-screen">
+        <span className="cab-opt-label" id="cab-opt-screen">Screen</span>
+        <div className="cab-seg">
+          {themes.map((t) => (
+            <button key={t.v} type="button" aria-pressed={theme === t.v} onClick={() => onTheme(t.v)}>
+              {t.icon} {t.label}
+            </button>
+          ))}
+        </div>
+        <p className="cab-opt-note">Auto is dark from 7 PM to 7 AM.</p>
+      </div>
+      <div className="cab-opt" role="group" aria-labelledby="cab-opt-text">
+        <span className="cab-opt-label" id="cab-opt-text">Text size</span>
+        <div className="cab-seg">
+          <button type="button" aria-pressed={textSize === "normal"} onClick={() => onTextSize("normal")}>
+            <span className="cab-aa" aria-hidden="true">Aa</span> Normal
+          </button>
+          <button type="button" aria-pressed={textSize === "large"} onClick={() => onTextSize("large")}>
+            <span className="cab-aa big" aria-hidden="true">Aa</span> Large
+          </button>
+        </div>
+      </div>
+      <button type="button" className="cab-sheet-btn" onClick={onToday}><Glyph name="list" /> Today&apos;s pills</button>
+      <button type="button" className="cab-detail-close" data-autofocus onClick={onClose}><Icon name="close" /> Close</button>
+    </Modal>
+  );
+}
+
+// Every dose today, in time order, with its box and what happened. Display only.
+function TodayList({ items, onBack, onClose }: { items: TodayItem[]; onBack?: () => void; onClose: () => void }) {
+  return (
+    <Modal label="Today's pills" onClose={onClose}>
+      <h2>Today&apos;s pills</h2>
+      {items.length ? (
+        <ol className="cab-sched">
+          {items.map((x) => (
+            <li key={x.key} className={x.status} style={{ "--box-pill": pillColor(x.color) } as React.CSSProperties}>
+              <b className="cab-sched-time">{clock(x.at)}</b>
+              <span className="cab-pill" aria-hidden="true" />
+              <span className="cab-sched-name">{x.name}</span>
+              <span className="cab-sched-box">{x.slot && `Box ${x.slot}`}</span>
+              <span className="cab-sched-status"><Icon name={STATUS_ICON[x.status]} /> {STATUS_TEXT[x.status]}</span>
+            </li>
+          ))}
+        </ol>
+      ) : <p className="cab-sched-none">No pills today.</p>}
+      <div className="cab-sheet-actions">
+        {onBack && <button type="button" className="cab-sheet-btn" onClick={onBack}><Glyph name="back" /> Menu</button>}
+        <button type="button" className="cab-detail-close" data-autofocus onClick={onClose}><Icon name="close" /> Close</button>
+      </div>
+    </Modal>
+  );
+}
+
+// Icons only this screen uses: Lucide paths, drawn like components/icon.
+const GLYPHS = {
+  menu: <><path d="M4 6h16" /><path d="M4 12h16" /><path d="M4 18h16" /></>,
+  sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></>,
+  moon: <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />,
+  list: <><path d="M3 5h.01" /><path d="M3 12h.01" /><path d="M3 19h.01" /><path d="M8 5h13" /><path d="M8 12h13" /><path d="M8 19h13" /></>,
+  back: <><path d="m12 19-7-7 7-7" /><path d="M19 12H5" /></>,
+};
+
+function Glyph({ name }: { name: keyof typeof GLYPHS }) {
+  return (
+    <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {GLYPHS[name]}
+    </svg>
+  );
+}
+
+function loadPref<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
+  try {
+    const v = localStorage.getItem(key);
+    return allowed.find((a) => a === v) ?? fallback;
+  } catch {
+    return fallback; // storage blocked: use the default
+  }
+}
+
+function savePref(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // storage blocked: the choice lasts until the page reloads
+  }
 }
 
 function medFlags(m: Medicine, full = false) {
@@ -337,13 +502,13 @@ function nextDose(meds: Medicine[], now: Date | null) {
 }
 
 type TodayStatus = "taken" | "missed" | "due" | "later";
-// "later" chips have no icon: plain is "not yet", and the names need the room
-const CHIP_ICON: Record<Exclude<TodayStatus, "later">, IconName> = { taken: "check", missed: "x", due: "pill" };
-const CHIP_SAY: Record<TodayStatus, string> = { taken: "taken", missed: "missed", due: "due now", later: "coming up" };
+type TodayItem = { key: string; at: string; name: string; color: string | null; slot?: number; status: TodayStatus };
+const STATUS_ICON: Record<TodayStatus, IconName> = { taken: "check", missed: "x", due: "pill", later: "clock" };
+const STATUS_TEXT: Record<TodayStatus, string> = { taken: "Taken", missed: "Missed", due: "Due now", later: "Coming up" };
 
-// Today's doses from the log (taken / missed / due now) plus scheduled times still to come.
-// Display only: the backend owns the schedule. Shows at most 4 (the last 2, then what's next) so names fit.
-function todayItems(meds: Medicine[], doses: DoseLog[], now: Date | null) {
+// Today's doses from the log (taken / missed / due now) plus scheduled times still to come, in time order.
+// Display only: the backend owns the schedule.
+function todayItems(meds: Medicine[], doses: DoseLog[], now: Date | null): TodayItem[] {
   if (!now) return [];
   const pad = (n: number) => String(n).padStart(2, "0");
   const ymd = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
@@ -351,12 +516,16 @@ function todayItems(meds: Medicine[], doses: DoseLog[], now: Date | null) {
   const med = (id: number) => meds.find((m) => m.id === id);
   const logged = doses.filter((d) => d.due_at.startsWith(ymd)).map((d) => ({
     key: `d${d.id}`, at: d.due_at.slice(11, 16), name: med(d.medicine_id)?.name ?? "Medicine",
-    color: med(d.medicine_id)?.color ?? null, status: (d.status === "pending" ? "due" : d.status) as TodayStatus,
+    color: med(d.medicine_id)?.color ?? null, slot: med(d.medicine_id)?.slot, status: (d.status === "pending" ? "due" : d.status) as TodayStatus,
   }));
   const later = meds.flatMap((m) => m.times
     .filter((t) => t > hhmm && !doses.some((d) => d.medicine_id === m.id && d.due_at.startsWith(`${ymd}T${t}`)))
-    .map((t) => ({ key: `m${m.id}-${t}`, at: t, name: m.name, color: m.color, status: "later" as TodayStatus })));
-  const byTime = (a: { at: string }, b: { at: string }) => a.at.localeCompare(b.at);
-  const done = logged.sort(byTime).slice(-2);
-  return [...done, ...later.sort(byTime).slice(0, 4 - done.length)];
+    .map((t) => ({ key: `m${m.id}-${t}`, at: t, name: m.name, color: m.color, slot: m.slot, status: "later" as TodayStatus })));
+  return [...logged, ...later].sort((a, b) => a.at.localeCompare(b.at));
+}
+
+// The bottom strip: the last 2 logged doses, then what's next, at most `max` so the names fit.
+function stripItems(items: TodayItem[], max: number) {
+  const done = items.filter((x) => x.status !== "later").slice(-2);
+  return [...done, ...items.filter((x) => x.status === "later").slice(0, max - done.length)];
 }
