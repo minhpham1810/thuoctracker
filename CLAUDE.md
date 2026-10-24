@@ -12,7 +12,7 @@ Smart pill cabinet (Raspberry Pi 5) + doctor web dashboard + family SMS alerts. 
 
 ## Layout
 
-- `backend/main.py`: FastAPI routes (stubs return 501). `backend/models.py`: the shared data contract (Patient, Doctor, Medicine, DoseLog, Alert). Change names there first, then tell the team.
+- `backend/main.py`: FastAPI routes (contract in TEAM.md; in-memory data, fake AI answers until `ai/` is ready). `backend/models.py`: the shared data contract (Patient, Doctor, Medicine, DoseLog, Alert). Change names there first, then tell the team.
 - `ai/__init__.py`: pure functions: `read_label`, `count_pills`, `transcribe`, `answer`, `speak`. Backend routes wrap them.
 - `pi/main.py`: polls `GET /cabinet/{id}/command`, drives servos/camera/mic/speaker.
 - `web/doctor`, `web/cabinet`: static pages served by the backend. The cabinet page runs full-screen on the Pi touchscreen.

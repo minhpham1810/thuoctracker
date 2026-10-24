@@ -8,6 +8,7 @@ from pydantic import BaseModel
 class Doctor(BaseModel):
     id: Optional[int] = None
     name: str
+    phone: Optional[str] = None  # only if refill alerts also go out as SMS
 
 
 class Patient(BaseModel):
@@ -15,6 +16,7 @@ class Patient(BaseModel):
     name: str
     age: int
     doctor_id: int
+    phone: str  # pill-time reminder texts
     family_phone: str
 
 

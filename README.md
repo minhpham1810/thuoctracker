@@ -47,4 +47,4 @@ Use a 2.4 GHz phone hotspot for the laptop and the Pi, not campus WiFi.
 
 ## Status
 
-Skeleton only. Every endpoint returns 501 and every hardware/AI function raises `NotImplementedError` until filled in.
+Backend API runs on in-memory sample data (see TEAM.md for routes); AI routes return fake answers and Pi/AI functions are still stubs.
