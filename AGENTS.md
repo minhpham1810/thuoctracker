@@ -10,9 +10,18 @@ Smart pill cabinet (Raspberry Pi 5) + doctor web dashboard + family SMS alerts. 
 - **Only the backend talks to the DB and sends SMS.** Cabinet, screens and AI go through the API.
 - Demo network is a 2.4 GHz phone hotspot, never campus WiFi.
 
+## Team sync (read this first)
+
+The team coordinates through the repo, not the group chat. Who owns what and the API contract are in `TEAM.md`.
+
+- **Before starting work:** `git pull`, then read the `## Status` section at the top of `TEAM.md`. It says what is ready, what changed, and what each person is blocked on.
+- **After pushing something another person uses** (a route, a JSON shape, a field in `models.py`, an `ai/` function, a page): add one line at the top of `## Status` (newest first): `- HH:MM <name> (<area>): <what changed / what is now ready / what the reader must do>`.
+- Only edit files in your own folder (see `TEAM.md`). If you need something from someone else's folder, add a `NEED:` line to Status naming them instead of editing their files.
+- Never change a route or JSON shape in the contract silently: update the contract in `TEAM.md` and add a Status line in the same commit.
+
 ## Layout
 
-- `backend/main.py`: FastAPI routes (stubs return 501). `backend/models.py`: the shared data contract (Patient, Doctor, Medicine, DoseLog, Alert). Change names there first, then tell the team.
+- `backend/main.py`: FastAPI routes (contract in TEAM.md; in-memory data, fake AI answers until `ai/` is ready). `backend/models.py`: the shared data contract (Patient, Doctor, Medicine, DoseLog, Alert). Change names there first, then tell the team.
 - `ai/__init__.py`: pure functions: `read_label`, `count_pills`, `transcribe`, `answer`, `speak`. Backend routes wrap them.
 - `pi/main.py`: polls `GET /cabinet/{id}/command`, drives servos/camera/mic/speaker.
 - `web/doctor`, `web/cabinet`: static pages served by the backend. The cabinet page runs full-screen on the Pi touchscreen.

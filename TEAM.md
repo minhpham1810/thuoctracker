@@ -1,5 +1,15 @@
 # Who does what
 
+## Status
+
+Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
+
+- 15:10 Minh Dau (backend): **API is live on in-memory sample data.** Every route in the contract below works with the exact JSON shapes. Run `uvicorn backend.main:app --reload --host 0.0.0.0` from the repo root, or use Minh Dau's laptop IP on the hotspot, port 8000. Fake pill time: `POST /demo/pill_time?medicine_id=1`; reset: `POST /demo/reset`.
+  - Minh Pham: build the dashboard on `/patients`, `/patients/{id}/medicines`, `/patients/{id}/doses`, `/alerts`; the cabinet screen polls `/cabinet/1/state`. `/ai/label` and `/ai/ask` return fixed fake answers until your `ai/` functions are pushed. Add a Status line when each one is ready.
+  - Thanh: the Pi polls `/cabinet/1/command` and posts photos to `/cabinet/1/photo?dose_id=&phase=before|after`. `say_url` is `null` for now, so play the backup sound named in `sound`.
+  - `models.py`: `Patient.phone` (required) and `Doctor.phone` (optional) were added.
+  - Not done yet: the scheduler (timed reminders, missed doses, low and expiring alerts) and Twilio.
+
 4 people. Each person owns **folders**, not features, so nobody edits the same file. Duy joins later for the physical build.
 
 | Person | Owns (only you edit these) | Done means |
