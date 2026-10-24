@@ -4,6 +4,10 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 15:20 Minh Dau (backend): **The scheduler is running.** Pill time starts a dose on its own, the reminder repeats, a dose with no pill taken is marked missed, and the low-pills and expiring alerts fire once each. Texts go through Twilio, or are printed to the console when `.env` has no keys. Put `DEMO=1` in `.env` for the 30 s missed / 10 s reminder timing.
+  - Thanh: **contract change.** A command may come without `open_slot` (e.g. `{"dose_id": 7, "sound": "missed"}`): just play the sound. The same `dose_id` can arrive again as a repeat reminder: open the slot again.
+  - Minh Pham: the cabinet `/state` can now be `mode: "missed"`. New alerts appear in `/alerts` on their own, so poll with `?since=`.
+
 - 15:10 Minh Dau (backend): **API is live on in-memory sample data.** Every route in the contract below works with the exact JSON shapes. Run `uvicorn backend.main:app --reload --host 0.0.0.0` from the repo root, or use Minh Dau's laptop IP on the hotspot, port 8000. Fake pill time: `POST /demo/pill_time?medicine_id=1`; reset: `POST /demo/reset`.
   - Minh Pham: build the dashboard on `/patients`, `/patients/{id}/medicines`, `/patients/{id}/doses`, `/alerts`; the cabinet screen polls `/cabinet/1/state`. `/ai/label` and `/ai/ask` return fixed fake answers until your `ai/` functions are pushed. Add a Status line when each one is ready.
   - Thanh: the Pi polls `/cabinet/1/command` and posts photos to `/cabinet/1/photo?dose_id=&phase=before|after`. `say_url` is `null` for now, so play the backup sound named in `sound`.
@@ -55,7 +59,7 @@ The Pi and the cabinet screen both poll. If they share one route, whoever reads 
 | `POST /ai/ask?patient_id=1` (audio) | Pi | `{"text": "...", "audio_url": "/audio/q12.mp3"}` |
 | `GET /audio/{file}.mp3` | Pi | MP3 the backend made with `speak()` |
 
-`sound` is one of `time_for_pill`, `good_job`, `already_took`, `missed`. If `say_url` fails to download, the Pi plays its stored file with that name.
+`open_slot` is optional: a command without it (e.g. `{"dose_id": 7, "say_url": null, "sound": "missed"}`) only plays audio. The same dose can arrive again as a repeat reminder. `sound` is one of `time_for_pill`, `good_job`, `already_took`, `missed`. If `say_url` fails to download, the Pi plays its stored file with that name.
 
 ### Demo controls (Minh Dau)
 

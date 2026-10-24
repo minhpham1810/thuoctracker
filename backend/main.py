@@ -5,15 +5,34 @@ Run: uvicorn backend.main:app --reload --host 0.0.0.0   (from repo root)
 Routes and response shapes follow the contract in TEAM.md. Data is in memory and
 seeded with sample patients; the AI routes return fake answers until ai/ is ready.
 """
-from datetime import date, datetime, timedelta
+import asyncio
+import os
+from contextlib import asynccontextmanager
+from datetime import date, datetime, time, timedelta
 from typing import Literal, Optional
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
 
 from .models import Alert, Doctor, DoseLog, Medicine, Patient
+from .sms import send_sms
 
-app = FastAPI(title="ThuocTracker")
+load_dotenv()
+DEMO = os.environ.get("DEMO") == "1"  # shortened times so judges see it live
+MISSED_AFTER = timedelta(seconds=30) if DEMO else timedelta(minutes=30)
+REMIND_EVERY = timedelta(seconds=10) if DEMO else timedelta(minutes=10)
+TICK_SECONDS = 2
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(scheduler())
+    yield
+    task.cancel()
+
+
+app = FastAPI(title="ThuocTracker", lifespan=lifespan)
 
 # shortcut: in-memory store, swap for SQLite if we need data to survive restarts
 db: dict = {}
@@ -53,6 +72,9 @@ def seed():
         commands={},  # patient_id -> list of pending Pi commands
         state={},     # patient_id -> what the cabinet screen shows
         counts={},    # dose_id -> {"before": n, "after": n}
+        reminded={},  # dose_id -> last reminder time
+        sent={("low_pills", 2)},  # (alert type, medicine_id) already alerted; seed alert above
+        last_tick=now,
     )
 
 
@@ -89,6 +111,77 @@ def mark_taken(dose: DoseLog, method: Literal["camera", "screen"]):
     dose.status, dose.taken_at, dose.method = "taken", datetime.now(), method
     m.pills_left = max(m.pills_left - 1, 0)
     set_state(m.patient_id, "taken", dose, "Good job!")
+
+
+def push_command(patient_id: int, cmd: dict):
+    db["commands"].setdefault(patient_id, []).append(cmd)
+
+
+def add_alert(type: str, to: Literal["doctor", "family"], p: Patient, message: str):
+    db["alerts"].append(Alert(id=next_id("alerts"), type=type, to=to, patient_id=p.id,
+                              message=message, at=datetime.now()))
+    phone = p.family_phone if to == "family" else find("doctors", p.doctor_id).phone
+    if phone:
+        send_sms(phone, message)
+
+
+def remind(dose: DoseLog, m: Medicine):
+    db["reminded"][dose.id] = datetime.now()
+    push_command(m.patient_id, {"dose_id": dose.id, "open_slot": m.slot, "say_url": None,
+                                "sound": "time_for_pill"})
+    set_state(m.patient_id, "take", dose, f"Take your {m.color} pill now ({m.name})")
+
+
+def start_dose(m: Medicine, due_at: datetime) -> DoseLog:
+    dose = DoseLog(id=next_id("doses"), medicine_id=m.id, due_at=due_at)
+    db["doses"].append(dose)
+    remind(dose, m)
+    send_sms(find("patients", m.patient_id).phone, f"Time for your {m.color} pill ({m.name}).")
+    return dose
+
+
+def tick():
+    """One scheduler pass: start due doses, remind, mark missed, low/expiring alerts."""
+    now = datetime.now()
+    last, db["last_tick"] = db["last_tick"], now
+    for m in list(db["medicines"]):
+        p = find("patients", m.patient_id)
+        for t in m.times:
+            due = datetime.combine(now.date(), time.fromisoformat(t))
+            if last < due <= now:
+                start_dose(m, due)
+        low = ("low_pills", m.id)
+        if m.pills_left < 5 and low not in db["sent"]:
+            db["sent"].add(low)
+            add_alert("low_pills", "doctor", p, f"{p.name} has {m.pills_left} {m.name} left. Refill needed.")
+            add_alert("low_pills", "family", p, f"{p.name} has only {m.pills_left} {m.name} left.")
+        elif m.pills_left >= 5:
+            db["sent"].discard(low)  # refilled; alert again next time it runs low
+        expiring = ("expiring_soon", m.id)
+        if m.expiration - now.date() <= timedelta(days=7) and expiring not in db["sent"]:
+            db["sent"].add(expiring)
+            add_alert("expiring_soon", "family", p, f"{p.name}'s {m.name} expires on {m.expiration}.")
+    for d in db["doses"]:
+        if d.status != "pending":
+            continue
+        m = find("medicines", d.medicine_id)
+        if now - d.due_at >= MISSED_AFTER:
+            d.status = "missed"
+            p = find("patients", m.patient_id)
+            set_state(p.id, "missed", d, "You missed your pill.")
+            push_command(p.id, {"dose_id": d.id, "say_url": None, "sound": "missed"})
+            add_alert("missed", "family", p, f"{p.name} missed {m.name} ({d.due_at:%H:%M}).")
+        elif now - db["reminded"].get(d.id, d.due_at) >= REMIND_EVERY:
+            remind(d, m)
+
+
+async def scheduler():
+    while True:
+        try:
+            await asyncio.to_thread(tick)  # to_thread: Twilio calls block
+        except Exception as e:
+            print(f"[scheduler] {e!r}")
+        await asyncio.sleep(TICK_SECONDS)
 
 
 @app.get("/health")
@@ -143,10 +236,6 @@ def list_alerts(since: Optional[datetime] = None) -> list[Alert]:
     return [a for a in db["alerts"] if since is None or a.at > since]
 
 
-# TODO scheduler: reminders every 10 min, missed after 30 min (30 s in demo),
-# low (<5 pills), expiring (<7 days). Texts via Twilio.
-
-
 # --- AI (wraps ai/; fake answers until those functions are ready) -----------
 @app.post("/ai/label")
 async def read_label(photo: UploadFile = File(...)):
@@ -193,13 +282,7 @@ async def cabinet_photo(patient_id: int, dose_id: int, phase: Literal["before", 
 @app.post("/demo/pill_time")
 def demo_pill_time(medicine_id: int) -> DoseLog:
     """Start a dose right now instead of waiting for its scheduled time."""
-    m = find("medicines", medicine_id)
-    dose = DoseLog(id=next_id("doses"), medicine_id=m.id, due_at=datetime.now())
-    db["doses"].append(dose)
-    db["commands"].setdefault(m.patient_id, []).append(
-        {"dose_id": dose.id, "open_slot": m.slot, "say_url": None, "sound": "time_for_pill"})
-    set_state(m.patient_id, "take", dose, f"Take your {m.color} pill now ({m.name})")
-    return dose
+    return start_dose(find("medicines", medicine_id), datetime.now())
 
 
 @app.post("/demo/reset")
