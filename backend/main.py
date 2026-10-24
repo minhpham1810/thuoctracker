@@ -20,7 +20,6 @@ import ai
 
 from .models import Alert, Doctor, DoseLog, Medicine, Message, Patient, PushToken, Role
 from .push import send_push
-from .sms import send_sms
 
 load_dotenv()
 DEMO = os.environ.get("DEMO") == "1"  # shortened times so judges see it live
@@ -54,7 +53,7 @@ def seed():
         doctors=[Doctor(id=1, name="Dr. Nguyen")],
         patients=[
             Patient(id=1, name="Grandma Lan", age=78, doctor_id=1,
-                    phone="+15705514374", family_phone="+15705514374"),  # Minh Dau's phone for the demo
+                    phone="+12723059760", family_phone="+12727881514"),  # real phones for the demo
             Patient(id=2, name="Mr. Tran", age=82, doctor_id=1,
                     phone="+15550000003", family_phone="+15550000004"),
             Patient(id=3, name="Mrs. Hoa", age=74, doctor_id=1,
@@ -198,13 +197,10 @@ def push_to(role: Role, p: Patient, title: str, body: str):
 
 
 def add_alert(type: str, to: Literal["doctor", "family"], p: Patient, message: str):
-    """Every alert goes to the app (dashboard + push) and by SMS."""
+    """Every alert goes to the dashboard and by push to that role's phones."""
     db["alerts"].append(Alert(id=next_id("alerts"), type=type, to=to, patient_id=p.id,
                               message=message, at=datetime.now()))
     push_to(to, p, "ThuocTracker", message)
-    phone = p.family_phone if to == "family" else find("doctors", p.doctor_id).phone
-    if phone:
-        send_sms(phone, message)
 
 
 def remind(dose: DoseLog, m: Medicine):
@@ -222,7 +218,6 @@ def start_dose(m: Medicine, due_at: datetime) -> DoseLog:
     p = find("patients", m.patient_id)
     text = f"Time for your {m.color} pill ({m.name})."
     push_to("patient", p, "Pill time", text)
-    send_sms(p.phone, text)
     return dose
 
 
@@ -265,7 +260,7 @@ def tick():
 async def scheduler():
     while True:
         try:
-            await asyncio.to_thread(tick)  # to_thread: Twilio calls block
+            await asyncio.to_thread(tick)  # to_thread: push calls block
         except Exception as e:
             print(f"[scheduler] {e!r}")
         await asyncio.sleep(TICK_SECONDS)

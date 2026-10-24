@@ -1,13 +1,13 @@
 # ThuocTracker
 
-Smart pill cabinet (Raspberry Pi 5) + doctor web dashboard + family SMS alerts. HackPSU Fall 2026 hackathon project; Devpost due 12:00 PM Sunday. See README.md for the overview.
+Smart pill cabinet (Raspberry Pi 5) + doctor web dashboard + family push alerts. HackPSU Fall 2026 hackathon project; Devpost due 12:00 PM Sunday. See README.md for the overview.
 
 ## Hard rules
 
 - **All project code must be written at HackPSU**, not before. Skeleton stubs only until the event.
 - **The AI never changes a dose.** It reminds and alerts only. Voice answers come from the real dose log, never invented.
 - **No AI on the Pi** (1GB RAM). The Pi takes photos/recordings and sends them to the backend; the backend calls Gemini and ElevenLabs.
-- **Only the backend talks to the DB and sends SMS.** Cabinet, screens and AI go through the API.
+- **Only the backend talks to the DB and sends push notifications.** Cabinet, screens and AI go through the API.
 - Demo network is a 2.4 GHz phone hotspot, never campus WiFi.
 
 ## Team sync (read this first)
@@ -29,8 +29,8 @@ The team coordinates through the repo, not the group chat. Who owns what and the
 
 ## Rules the backend owns
 
-- Pill time: remind (screen flash + "Time for your pill"), repeat every 10 min, SMS the patient.
-- No pill removed after 30 min (30 s in demo) -> `missed`, SMS family. Screen tap "I took it" counts as taken.
+- Pill time: remind (screen flash + "Time for your pill"), repeat every 10 min, push to the patient's phone.
+- No pill removed after 30 min (30 s in demo) -> `missed`, push to family. Screen tap "I took it" counts as taken.
 - `pills_left < 5` -> `low_pills` alert to doctor and family.
 - Expiration within 7 days -> `expiring_soon` alert to family.
 - Same dose opened twice -> screen warning "You already took this one."

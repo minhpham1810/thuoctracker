@@ -21,6 +21,10 @@ type Data = {
   doses: Record<number, DoseLog[]>;
 };
 
+// Browsers only allow popups on https or localhost, so the hotspot IP gets "unsupported".
+type Popups = NotificationPermission | "unsupported";
+const popupsSupported = () => typeof window !== "undefined" && window.isSecureContext && "Notification" in window;
+
 const ALERT_LABEL: Record<Alert["type"], string> = {
   missed: "Missed dose", low_pills: "Refill needed", expiring_soon: "Expiring soon",
 };
@@ -32,6 +36,7 @@ export default function Dashboard() {
   const [adding, setAdding] = useState(false);
   const [newAlerts, setNewAlerts] = useState<Set<number>>(new Set());
   const seen = useRef<Set<number> | null>(null);
+  const [popups, setPopups] = useState<Popups>("unsupported");
 
   // shortcut: refetches everything every 3 s; fine for a few demo patients, use /alerts?since= at scale
   const load = useCallback(async () => {
@@ -48,6 +53,12 @@ export default function Dashboard() {
       const fresh = seen.current ? [...ids].filter((id) => !seen.current!.has(id)) : [];
       seen.current = ids;
       if (fresh.length) setNewAlerts(new Set(fresh));
+      if (fresh.length && popupsSupported() && Notification.permission === "granted") {
+        for (const a of alerts.filter((x) => fresh.includes(x.id))) {
+          const who = patients.find((p) => p.id === a.patient_id)?.name ?? `Patient ${a.patient_id}`;
+          new Notification(`${ALERT_LABEL[a.type]}: ${who}`, { body: a.message, tag: `alert-${a.id}` });
+        }
+      }
       setData({
         patients,
         alerts: [...alerts].sort((a, b) => b.at.localeCompare(a.at)),
@@ -61,12 +72,19 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    const first = setTimeout(load, 0);
+    const first = setTimeout(() => {
+      if (popupsSupported()) setPopups(Notification.permission);
+      load();
+    }, 0);
     const t = setInterval(load, POLL_MS);
     return () => { clearTimeout(first); clearInterval(t); };
   }, [load]);
 
   const patient = data?.patients.find((p) => p.id === selected) ?? data?.patients[0];
+
+  async function enablePopups() {
+    setPopups(await Notification.requestPermission());
+  }
 
   async function resetDemo() {
     await api("/demo/reset", { method: "POST" }).catch(() => setOnline(false));
@@ -86,6 +104,12 @@ export default function Dashboard() {
           <span className="dot" aria-hidden="true" />
           {!data ? "Connecting…" : online ? "Live" : "Backend offline"}
         </div>
+        {popups === "default" && (
+          <button className="btn btn-sm btn-ghost-light" type="button" onClick={enablePopups}
+            title="Show a desktop notification when a new alert comes in">
+            <Icon name="bell" /> Turn on popups
+          </button>
+        )}
         <button className="btn btn-sm btn-ghost-light" type="button" onClick={resetDemo} title="Reload sample patients">
           Reset demo
         </button>
@@ -145,6 +169,10 @@ export default function Dashboard() {
                     </div>
                     <p>{a.message}</p>
                     <small>{who?.name ?? `Patient ${a.patient_id}`} · {fmtDateTime(a.at)}</small>
+                    <small className="sent">
+                      <Icon name="bell" />
+                      Push sent to {a.to === "family" ? "family's" : "doctor's"} phone
+                    </small>
                   </div>
                 </li>
               );

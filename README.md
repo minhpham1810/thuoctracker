@@ -10,7 +10,7 @@ Built at HackPSU Fall 2026.
 
 - **Cabinet** (Raspberry Pi 5): 3 servo-controlled slots, touchscreen, camera that checks whether a pill was really taken, mic + speaker you can talk to.
 - **Doctor dashboard** (web): patients, taken/missed doses, pills left, live alerts.
-- **Family alerts** (Twilio SMS): missed dose, low pills, expiring soon.
+- **Family alerts** (Expo push to the mobile app): missed dose, low pills, expiring soon.
 - **AI**: Gemini reads medicine labels and counts pills from camera photos. Voice questions ("Did I take my pill today?") are answered from the real dose log and spoken with ElevenLabs.
 
 ## Architecture
@@ -36,12 +36,12 @@ Nothing talks directly to anything else. The cabinet, screens, phones and AI all
  └────────────────────┘     │  in-memory data        │     ├────────────────────┤
                             │  /audio/*.mp3          ├────►│ ElevenLabs  voice  │
  ┌────────────────────┐     │                        │     ├────────────────────┤
- │ Phones  app/ Expo  │◄───►│  ai/ pure functions    ├────►│ Twilio  SMS        │
- │ patient, family,   │     │  (called by routes)    │     ├────────────────────┤
- │ doctor             │     │                        ├────►│ Expo push          │
+ │ Phones  app/ Expo  │◄───►│  ai/ pure functions    ├────►│ Expo push          │
+ │ patient, family,   │     │  (called by routes)    │     │ alerts, pill time, │
+ │ doctor             │     │                        │     │ chat               │
  └─────────▲──────────┘     └────────────────────────┘     └─────────┬──────────┘
            │                                                         │
-           └──────────────── texts + push notifications ─────────────┘
+           └──────────────────── push notifications ─────────────────┘
 ```
 
 | Part | Talks to | How |
@@ -49,16 +49,16 @@ Nothing talks directly to anything else. The cabinet, screens, phones and AI all
 | Pi (`pi/main.py`) | backend :8000 | polls `GET /cabinet/{id}/command`, posts slot photos and voice questions, plays `/audio/*.mp3` |
 | Touchscreen + dashboard (`web/`) | backend via Next.js `/api/*` proxy | polls `/cabinet/{id}/state` every 1 s, dashboard polls every 3 s |
 | Mobile app (`app/`) | backend :8000 directly | polls status, alerts and chat; registers for push |
-| Backend (`backend/`) | Gemini, ElevenLabs (through `ai/`), Twilio, Expo push | the only part that decides anything |
+| Backend (`backend/`) | Gemini, ElevenLabs (through `ai/`), Expo push | the only part that decides anything |
 
 ### Main flows
 
 **Pill time**
 1. The scheduler sees a dose is due → creates a `pending` dose.
 2. `ai.speak()` (ElevenLabs) makes "Time for your blue pill" → MP3 in `/audio/`.
-3. The Pi gets a command: open slot 2, play the MP3. The screen highlights the slot. The patient gets an SMS (Twilio) and a push.
+3. The Pi gets a command: open slot 2, play the MP3. The screen highlights the slot. The patient's phone gets a push.
 4. The Pi photographs the slot before and after. `ai.count_pills()` (Gemini) counts both. Exactly one fewer → **taken**. The patient can also tap "I took it".
-5. Nothing after 30 min (30 s with `DEMO=1`) → **missed**, SMS + push to family, alert on the dashboard.
+5. Nothing after 30 min (30 s with `DEMO=1`) → **missed**, push to family, alert on the dashboard.
 
 **Voice question**
 Patient asks "Did I take my pill today?" (Pi mic or the screen's Ask button) → `ai.transcribe()` → `ai.answer()` answers **only from the dose log** (otherwise "ask your doctor") → `ai.speak()` → the Pi or screen plays it.
@@ -76,7 +76,7 @@ If a cloud service is down, the demo keeps working: the Pi plays 4 stored sounds
 
 | Dir | Owner | What |
 |---|---|---|
-| `backend/` | Backend | API, data contract (`models.py`), rules, Twilio |
+| `backend/` | Backend | API, data contract (`models.py`), rules, push |
 | `ai/` | AI | label reading, pill counting, voice (pure functions) |
 | `pi/` | Hardware | servos, camera, mic, speaker runtime |
 | `web/` | Apps | Next.js: doctor dashboard (`/doctor`) and cabinet touchscreen (`/cabinet`) |

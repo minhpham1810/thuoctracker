@@ -108,6 +108,8 @@ tbody tr:last-child td { border-bottom: 0; }
 .alert.low_pills .icon, .alert.expiring_soon .icon { color: var(--warn); }
 .alert p { margin: 0; font-weight: 500; }
 .alert small { color: var(--muted); }
+.alert .sent { display: flex; align-items: center; gap: 4px; margin-top: 4px; }
+.alert .sent .icon { width: 14px; height: 14px; color: var(--muted); }
 .alert.new { animation: flash 1.2s ease-out 2; }
 @keyframes flash { 0% { box-shadow: 0 0 0 0 rgb(185 28 28 / .5); } 100% { box-shadow: 0 0 0 10px rgb(185 28 28 / 0); } }
 
