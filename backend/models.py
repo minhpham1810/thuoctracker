@@ -26,7 +26,7 @@ class Medicine(BaseModel):
     name: str
     dose: str  # e.g. "1 pill"
     times: list[str]  # e.g. ["08:00", "20:00"]
-    slot: Literal[1, 2, 3]
+    slot: Literal[1, 2, 3, 4, 5, 6, 7]  # boxes 1-3 top row, 4-6 middle row, 7 the long bottom box
     pills_left: int
     expiration: date
     color: str  # shown on the cabinet screen

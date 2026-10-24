@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon, Logo } from "@/components/icon";
 import {
-  api, daysUntil, fmtDate, fmtDateTime, fmtTime, pillColor,
+  api, daysUntil, fmtDate, fmtDateTime, fmtTime, LONG_SLOT, pillColor, SLOTS,
   type Alert, type DoseLog, type Medicine, type Patient,
 } from "@/lib/api";
 import AddMedicine from "./add-medicine";
@@ -199,6 +199,7 @@ function PatientView({ patient, meds, doses, onAdd, onChange }: {
   const adherence = taken + missed ? Math.round((100 * taken) / (taken + missed)) : null;
   const medName = (id: number) => meds.find((m) => m.id === id)?.name ?? `Medicine ${id}`;
   const lowest = [...meds].sort((a, b) => a.pills_left - b.pills_left)[0];
+  const firstFree = SLOTS.find((s) => !meds.some((m) => m.slot === s));
 
   async function pillTime(m: Medicine) {
     setBusy(m.id);
@@ -215,7 +216,7 @@ function PatientView({ patient, meds, doses, onAdd, onChange }: {
           <div className="meta">Age {patient.age} · Patient {patient.phone} · Family {patient.family_phone}</div>
         </div>
         <div className="actions">
-          <button type="button" className="btn btn-primary" onClick={onAdd} disabled={meds.length >= 3}>
+          <button type="button" className="btn btn-primary" onClick={onAdd} disabled={!firstFree}>
             <Icon name="plus" /> Add medicine
           </button>
         </div>
@@ -233,12 +234,13 @@ function PatientView({ patient, meds, doses, onAdd, onChange }: {
 
       <div className="section-title"><h3>Cabinet prescriptions</h3></div>
       <div className="rx-grid">
-        {([1, 2, 3] as const).map((slot) => {
+        {/* 7 boxes: show the filled ones plus a single "add" card for the next free box */}
+        {SLOTS.filter((s) => s === firstFree || meds.some((m) => m.slot === s)).map((slot) => {
           const m = meds.find((x) => x.slot === slot);
           if (!m) {
             return (
               <button key={slot} type="button" className="rx slot-empty" onClick={onAdd}>
-                <span className="slot-label">SLOT {slot} · EMPTY</span>
+                <span className="slot-label">SLOT {slot}{slot === LONG_SLOT ? " (LONG)" : ""} · EMPTY</span>
                 <Icon name="plus" />
                 <span>Add medicine</span>
               </button>

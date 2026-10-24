@@ -2,12 +2,18 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon, Logo, type IconName } from "@/components/icon";
-import { api, pillColor, type CabinetState, type Medicine } from "@/lib/api";
+import {
+  api, daysUntil, fmtDate, LONG_SLOT, pillColor, SLOTS,
+  type CabinetState, type DoseLog, type Medicine, type Slot,
+} from "@/lib/api";
 
 const STATE_MS = 1000;
 const MEDS_MS = 10_000;
 const ASK_MAX_MS = 8000; // stop recording on its own if the patient doesn't tap again
 const ANSWER_MS = 15_000; // how long the answer stays on screen
+const DETAIL_MS = 15_000; // a tapped box's details close on their own
+const LOW = 5; // backend's low-pill rule; display only
+const EXPIRING_DAYS = 7; // backend's expiring-soon rule; display only
 
 type Ask =
   | { phase: "off" }
@@ -23,10 +29,12 @@ export default function Cabinet() {
   const [patientId, setPatientId] = useState<number | null>(null);
   const [state, setState] = useState<CabinetState | null>(null);
   const [meds, setMeds] = useState<Medicine[]>([]);
+  const [doses, setDoses] = useState<DoseLog[]>([]);
   const [online, setOnline] = useState(true);
   const [now, setNow] = useState<Date | null>(null); // null until mounted, so server and client HTML match
   const [sending, setSending] = useState(false);
   const [ask, setAsk] = useState<Ask>({ phase: "off" });
+  const [detail, setDetail] = useState<Slot | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
 
   useEffect(() => {
@@ -47,9 +55,11 @@ export default function Cabinet() {
 
   const loadMeds = useCallback(async () => {
     if (!patientId) return;
-    try {
-      setMeds(await api<Medicine[]>(`/patients/${patientId}/medicines`));
-    } catch { /* slot labels are cosmetic; keep the last ones */ }
+    // box labels and today's list are display only; on failure keep the last ones
+    await Promise.all([
+      api<Medicine[]>(`/patients/${patientId}/medicines`).then(setMeds).catch(() => {}),
+      api<DoseLog[]>(`/patients/${patientId}/doses`).then(setDoses).catch(() => {}),
+    ]);
   }, [patientId]);
 
   useEffect(() => {
@@ -64,6 +74,27 @@ export default function Cabinet() {
     return () => { clearTimeout(first); clearInterval(t); };
   }, [loadMeds]);
 
+  const mode = state?.mode ?? "idle";
+
+  // pills left and today's list change when a dose starts or ends: refresh right away
+  useEffect(() => {
+    const t = setTimeout(loadMeds, 0);
+    return () => clearTimeout(t);
+  }, [mode, loadMeds]);
+
+  useEffect(() => {
+    if (detail === null) return;
+    const t = setTimeout(() => setDetail(null), DETAIL_MS);
+    return () => clearTimeout(t);
+  }, [detail]);
+
+  // a pill prompt closes any open box details for good, so they don't pop back after it
+  useEffect(() => {
+    if (mode !== "take") return;
+    const t = setTimeout(() => setDetail(null), 0);
+    return () => clearTimeout(t);
+  }, [mode]);
+
   async function tookIt() {
     if (!state?.dose_id) return;
     setSending(true);
@@ -75,7 +106,7 @@ export default function Cabinet() {
   // Voice question: record in the browser -> /ai/ask (Gemini answers from the dose log) -> play the ElevenLabs MP3.
   async function startAsk() {
     if (!navigator.mediaDevices?.getUserMedia) {
-      // browsers only allow the mic on https or localhost; the Pi kiosk needs a Chromium flag (see TEAM.md)
+      // browsers only allow the mic on https or localhost; the Pi kiosk passes a Chromium flag (pi/kiosk.sh)
       return setAsk({ phase: "answer", text: "The microphone isn't available on this screen." });
     }
     let stream: MediaStream;
@@ -118,14 +149,19 @@ export default function Cabinet() {
     return () => clearTimeout(t);
   }, [ask]);
 
-  const mode = state?.mode ?? "idle";
   const color = pillColor(state?.color ?? null);
+  const inSlot = (s: number) => meds.find((m) => m.slot === s);
+  const openSlot = mode === "take" ? state?.slot ?? null : null;
+  const lit = mode !== "idle" ? state?.slot ?? null : null;
+  const dueMed = openSlot ? inSlot(openSlot) : undefined;
   const next = nextDose(meds, now);
+  const items = todayItems(meds, doses, now);
+  const shown = detail !== null && mode !== "take" ? inSlot(detail) : undefined; // the pill prompt always wins
 
   return (
     <div className={`cab mode-${mode}`} style={{ "--pill": color } as React.CSSProperties}>
       <header className="cab-bar">
-        <span className="cab-brand"><Logo size={36} /> ThuocTracker</span>
+        <span className="cab-brand"><Logo size={32} /> ThuocTracker</span>
         {now && (
           <span className="cab-clock">
             {now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
@@ -139,73 +175,159 @@ export default function Cabinet() {
       )}
 
       <main className="cab-main">
-        <div className="cab-hero" role="status" aria-live="assertive">
-          <span className="cab-icon"><Icon name={MODE_ICON[mode]} /></span>
-          {ask.phase !== "off" && mode !== "take" ? (
-            <>
-              <h1 className="cab-msg cab-answer">
-                {ask.phase === "listening" ? "I'm listening…" : ask.phase === "thinking" ? "Let me check…" : ask.text}
-              </h1>
-              {ask.phase === "listening" && <p className="cab-sub">Ask your question, then tap <b>Done</b>.</p>}
-            </>
-          ) : mode === "idle" ? (
-            <>
-              <h1 className="cab-msg">{now ? now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : " "}</h1>
-              <p className="cab-sub">
-                {next ? <>No pills right now. Next: <b>{next.name}</b> at <b>{next.time}</b></> : "No pills right now."}
-              </p>
-            </>
+        <section className="cab-side">
+          <div className="cab-hero" role="status" aria-live="assertive">
+            <span className="cab-icon"><Icon name={MODE_ICON[mode]} /></span>
+            {ask.phase !== "off" && mode !== "take" ? (
+              <>
+                <h1 className="cab-msg cab-answer">
+                  {ask.phase === "listening" ? "I'm listening…" : ask.phase === "thinking" ? "Let me check…" : ask.text}
+                </h1>
+                {ask.phase === "listening" && <p className="cab-sub">Ask your question, then tap <b>Done</b>.</p>}
+              </>
+            ) : mode === "idle" ? (
+              <>
+                <h1 className="cab-msg">No pills right now</h1>
+                {next && <p className="cab-sub">Next: <b>{next.name}</b> at <b>{next.time}</b>, box <b>{next.slot}</b></p>}
+              </>
+            ) : (
+              <>
+                <h1 className="cab-msg">{state?.message}</h1>
+                {openSlot && (
+                  <p className="cab-sub">
+                    Open <b>box {openSlot}</b>{dueMed && <> · take <b>{dueMed.dose}</b></>}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+
+          {mode === "take" && state?.dose_id ? (
+            <button type="button" className="cab-took" onClick={tookIt} disabled={sending}>
+              <Icon name="check" /> {sending ? "Saving…" : "I took it"}
+            </button>
           ) : (
-            <>
-              <h1 className="cab-msg">{state?.message}</h1>
-              {mode === "take" && state?.slot && <p className="cab-sub">The door of <b>slot {state.slot}</b> is open.</p>}
-            </>
+            <button type="button" className={`cab-ask${ask.phase === "listening" ? " listening" : ""}`}
+              onClick={askButton} disabled={ask.phase === "thinking"}>
+              <Icon name="mic" />
+              {ask.phase === "listening" ? "Done" : ask.phase === "thinking" ? "Thinking…" : "Ask a question"}
+            </button>
           )}
-        </div>
+        </section>
 
-        <ol className="cab-slots" aria-label="Pill slots">
-          {[1, 2, 3].map((slot) => {
-            const m = meds.find((x) => x.slot === slot);
-            const active = state?.slot === slot && mode !== "idle";
-            return (
-              <li key={slot} className={`cab-slot${active ? " active" : ""}`}
-                style={m ? ({ "--slot-pill": pillColor(m.color) } as React.CSSProperties) : undefined}>
-                <span className="cab-slot-num">{slot}</span>
-                <span className="cab-slot-name">
-                  {m && <span className="cab-dot" aria-hidden="true" />}
-                  {m?.name ?? "Empty"}
-                </span>
-                {active && mode === "take" && <span className="cab-slot-tag">OPEN</span>}
-              </li>
-            );
-          })}
+        {/* Mirrors the real cabinet: boxes 1-3, then 4-6, then the long box 7 across the bottom */}
+        <ol className="cab-grid" aria-label="Cabinet boxes">
+          {SLOTS.map((slot) => (
+            <Box key={slot} slot={slot} m={inSlot(slot)} open={openSlot === slot} lit={lit === slot}
+              dim={openSlot !== null && openSlot !== slot} onTap={() => setDetail(slot)} />
+          ))}
         </ol>
-
-        {mode === "take" && state?.dose_id && (
-          <button type="button" className="cab-took" onClick={tookIt} disabled={sending}>
-            <Icon name="check" /> {sending ? "Saving…" : "I took it"}
-          </button>
-        )}
-
-        {mode !== "take" && (
-          <button type="button" className={`cab-ask${ask.phase === "listening" ? " listening" : ""}`}
-            onClick={askButton} disabled={ask.phase === "thinking"}>
-            <Icon name="mic" />
-            {ask.phase === "listening" ? "Done" : ask.phase === "thinking" ? "Thinking…" : "Ask a question"}
-          </button>
-        )}
       </main>
+
+      <footer className="cab-today" aria-label="Today's pills">
+        <span className="cab-today-label">Today</span>
+        {items.length ? items.map((x) => (
+          <span key={x.key} className={`cab-chip ${x.status}`}
+            style={{ "--chip-pill": pillColor(x.color) } as React.CSSProperties}>
+            <Icon name={CHIP_ICON[x.status]} />
+            <b>{clock(x.at)}</b> <span className="cab-chip-name">{x.name}</span>
+          </span>
+        )) : <span className="cab-today-none">No pills today.</span>}
+      </footer>
+
+      {shown && <Details m={shown} onClose={() => setDetail(null)} />}
     </div>
   );
+}
+
+function Box({ slot, m, open, lit, dim, onTap }: {
+  slot: Slot; m?: Medicine; open: boolean; lit: boolean; dim: boolean; onTap: () => void;
+}) {
+  const flags = m ? medFlags(m) : [];
+  const cls = ["cab-box", slot === LONG_SLOT && "long", !m && "empty", open && "open", lit && "lit", dim && "dim"];
+  return (
+    <li className={cls.filter(Boolean).join(" ")}
+      style={m ? ({ "--box-pill": pillColor(m.color) } as React.CSSProperties) : undefined}>
+      <button type="button" onClick={onTap} disabled={!m}
+        aria-label={m ? `Box ${slot}: ${m.name}, ${m.pills_left} left` : `Box ${slot}: empty`}>
+        <span className="cab-box-num">{slot}</span>
+        {m ? (
+          <span className="cab-box-body">
+            <span className="cab-box-name"><span className="cab-dot" aria-hidden="true" />{m.name}</span>
+            <span className={`cab-box-left${m.pills_left < LOW ? " low" : ""}`}>{m.pills_left} left</span>
+            {flags.length > 0 && <span className="cab-box-flags">{flags.map((f) => <i key={f}>{f}</i>)}</span>}
+          </span>
+        ) : (
+          <span className="cab-box-body"><span className="cab-box-name">Empty</span></span>
+        )}
+        {open && <span className="cab-box-tag">OPEN</span>}
+      </button>
+    </li>
+  );
+}
+
+// Big read-only card for one box. Tapping anywhere closes it.
+function Details({ m, onClose }: { m: Medicine; onClose: () => void }) {
+  const days = daysUntil(m.expiration);
+  return (
+    <div className="cab-detail" role="dialog" aria-modal="true" aria-label={`Box ${m.slot}: ${m.name}`} onClick={onClose}>
+      <div className="cab-detail-card" style={{ "--box-pill": pillColor(m.color) } as React.CSSProperties}>
+        <p className="cab-detail-box">Box {m.slot}{m.slot === LONG_SLOT ? " · long box" : ""}</p>
+        <h2><span className="cab-dot" aria-hidden="true" />{m.name}</h2>
+        <dl>
+          <dt>Take</dt><dd>{m.dose}</dd>
+          <dt>When</dt><dd>{m.times.map(clock).join(" · ")}</dd>
+          <dt>Pills left</dt>
+          <dd className={m.pills_left < LOW ? "warn" : undefined}>{m.pills_left}{m.pills_left < LOW && " · refill soon"}</dd>
+          <dt>Expires</dt>
+          <dd className={days <= EXPIRING_DAYS ? "warn" : undefined}>{fmtDate(m.expiration)}{days <= EXPIRING_DAYS && ` · ${expiresIn(days)}`}</dd>
+        </dl>
+        <button type="button" className="cab-detail-close"><Icon name="close" /> Close</button>
+      </div>
+    </div>
+  );
+}
+
+function medFlags(m: Medicine) {
+  const days = daysUntil(m.expiration);
+  return [m.pills_left < LOW && "Refill soon", days <= EXPIRING_DAYS && expiresIn(days)].filter((f): f is string => !!f);
+}
+
+const expiresIn = (days: number) => (days < 0 ? "Expired" : days === 0 ? "Expires today" : `Expires in ${days} d`);
+
+// "08:00" -> "8:00 AM"
+function clock(hhmm: string) {
+  const [h, min] = hhmm.split(":").map(Number);
+  return new Date(0, 0, 0, h, min).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
 // Display only: the next scheduled time today across this cabinet's medicines.
 function nextDose(meds: Medicine[], now: Date | null) {
   if (!now) return null;
   const hhmm = now.toTimeString().slice(0, 5);
-  const upcoming = meds.flatMap((m) => m.times.map((t) => ({ name: m.name, t })))
+  const upcoming = meds.flatMap((m) => m.times.map((t) => ({ name: m.name, slot: m.slot, t })))
     .filter((x) => x.t > hhmm).sort((a, b) => a.t.localeCompare(b.t))[0];
-  if (!upcoming) return null;
-  const [h, min] = upcoming.t.split(":").map(Number);
-  return { name: upcoming.name, time: new Date(0, 0, 0, h, min).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) };
+  return upcoming ? { name: upcoming.name, slot: upcoming.slot, time: clock(upcoming.t) } : null;
+}
+
+type TodayStatus = "taken" | "missed" | "due" | "later";
+const CHIP_ICON: Record<TodayStatus, IconName> = { taken: "check", missed: "x", due: "pill", later: "clock" };
+
+// Today's doses from the log (taken / missed / due now) plus scheduled times still to come.
+// Display only: the backend owns the schedule. Shows the last 2 and the next 3 to stay readable.
+function todayItems(meds: Medicine[], doses: DoseLog[], now: Date | null) {
+  if (!now) return [];
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const ymd = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const hhmm = now.toTimeString().slice(0, 5);
+  const med = (id: number) => meds.find((m) => m.id === id);
+  const logged = doses.filter((d) => d.due_at.startsWith(ymd)).map((d) => ({
+    key: `d${d.id}`, at: d.due_at.slice(11, 16), name: med(d.medicine_id)?.name ?? "Medicine",
+    color: med(d.medicine_id)?.color ?? null, status: (d.status === "pending" ? "due" : d.status) as TodayStatus,
+  }));
+  const later = meds.flatMap((m) => m.times
+    .filter((t) => t > hhmm && !doses.some((d) => d.medicine_id === m.id && d.due_at.startsWith(`${ymd}T${t}`)))
+    .map((t) => ({ key: `m${m.id}-${t}`, at: t, name: m.name, color: m.color, status: "later" as TodayStatus })));
+  const byTime = (a: { at: string }, b: { at: string }) => a.at.localeCompare(b.at);
+  return [...logged.sort(byTime).slice(-2), ...later.sort(byTime).slice(0, 3)];
 }

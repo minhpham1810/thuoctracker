@@ -4,6 +4,10 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 17:30 Thanh (pi + cabinet screen): **Contract change: the cabinet has 7 boxes, `Medicine.slot` is now 1-7.** Boxes 1-3 top row, 4-6 middle row, 7 a long box across the bottom; every box holds pills like a slot. Additive: slots 1-3 still work. Changed `models.py`, `web/lib/api.ts` (`SLOTS`, `LONG_SLOT`), the add-medicine slot picker and the dashboard's prescription cards (filled boxes plus one "add" card), and `pi/main.py` (box n = PCA9685 channel n-1). **Cabinet screen redesigned** as a picture of the cabinet: the box to open glows with OPEN and the rest fade, each box shows its pills left with "Refill soon" / "Expires in N d", tapping a box opens its details, the take screen says "Open box N · take <dose>", and a Today strip along the bottom shows taken / missed / due / coming doses. Tested on the Pi touchscreen (800x480). Also: the Pi now boots straight into the kiosk with the mic flags (`pi/setup.sh`).
+  - Minh Dau: please check the slot change is fine with the backend; nothing else in the backend needed changing.
+  - Minh Pham: I edited `web/app/cabinet/*` and two doctor files (slot lists only). On the Pi, serve the web app with `npm run build && npx next start -H 0.0.0.0`: dev mode blocks the Pi's browser (cross-origin dev resources).
+
 - 16:25 Minh Pham (web + ai): **Cabinet screen: "Ask a question" button** (records in the browser -> `/ai/ask` -> shows the answer big and plays the ElevenLabs MP3). Hidden while a pill is due. **Dashboard: "Cabinet camera test"** under the prescriptions: upload before/after slot photos for the waiting dose, see Gemini's counts, and the dose turns taken when exactly 1 is removed (tests counting without the Pi). `ai.transcribe` now detects WAV/WebM/MP4/OGG/MP3 by itself.
   - NEED Thanh (pi): Chromium only allows the mic on https or localhost. Start the kiosk with `--unsafely-treat-insecure-origin-as-secure=http://<laptop-ip>:3000` or the Ask button says the mic isn't available. If the Pi mic is unreliable, keep using `record_question` + `/ai/ask` from `pi/main.py`.
 - 16:08 Minh Pham (ai): **All 5 `ai/` functions are real now** (Gemini `gemini-3.5-flash` + ElevenLabs over `requests`, no new SDKs; tested live: speak, transcribe, answer). The backend's existing `try_ai` wiring picks them up, nothing to change. Checked the whole flow offline with faked APIs: `/ai/label`, `/ai/ask` -> MP3, pill time -> SMS + `say_url`, before/after photos -> taken. Test: `python -m ai.test_ai`.
@@ -100,7 +104,7 @@ Every alert now goes to the app (dashboard + push to that role's phones) **and**
 
 1. `Patient.phone`: the reminder text goes to the patient's own phone, but only `family_phone` exists today.
 2. `Doctor.phone` (optional): only if we want refill alerts as SMS too; otherwise doctor alerts just show on the dashboard.
-3. `Medicine.slot` is `1 | 2 | 3`; keep it. Two medicines can't share a slot: reject in `POST /medicines`.
+3. `Medicine.slot` is `1`-`7` (boxes 1-3 top row, 4-6 middle row, 7 the long bottom box; changed from 1-3 at 17:30). Two medicines can't share a slot: reject in `POST /medicines`.
 4. Dose log passed to `answer()`: a list of `{"medicine": "Aspirin", "due_at": iso, "status": "taken", "taken_at": iso}`. Minh Pham codes against this shape.
 
 ## Each person's task list

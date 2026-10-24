@@ -26,8 +26,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SOUNDS = os.path.join(HERE, "sounds")  # time_for_pill.mp3, good_job.mp3, already_took.mp3, missed.mp3
 MOCK_PHOTO = os.path.join(HERE, "mock", "slot.jpg")
 
-# Slot n is wired to PCA9685 channel n-1. Calibrate angles on the real cabinet.
-SLOT_CHANNELS = {1: 0, 2: 1, 3: 2}
+# Boxes 1-3 top row, 4-6 middle row, 7 the long bottom box. Box n is wired to
+# PCA9685 channel n-1. Calibrate angles on the real cabinet.
+SLOT_CHANNELS = {n: n - 1 for n in range(1, 8)}
 CLOSED_ANGLE = 0
 OPEN_ANGLE = 90
 
@@ -50,7 +51,7 @@ def _servos():
 
 def _move(slot: int, angle: int):
     if slot not in SLOT_CHANNELS:
-        raise ValueError(f"slot must be 1-3, got {slot}")
+        raise ValueError(f"slot must be 1-7, got {slot}")
     if "servo" in MOCK:
         print(f"[mock] slot {slot} -> {angle} deg")
         return
@@ -58,7 +59,7 @@ def _move(slot: int, angle: int):
 
 
 def open_slot(slot: int):
-    """Move servo `slot` (1-3) via the PCA9685 over I2C."""
+    """Move servo `slot` (1-7) via the PCA9685 over I2C."""
     _move(slot, OPEN_ANGLE)
 
 

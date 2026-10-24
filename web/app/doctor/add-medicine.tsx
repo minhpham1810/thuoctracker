@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/icon";
-import { api, PILL_COLOR_NAMES, type LabelDraft, type Medicine, type Patient } from "@/lib/api";
+import { api, LONG_SLOT, PILL_COLOR_NAMES, SLOTS, type LabelDraft, type Medicine, type Patient } from "@/lib/api";
 
 const TIMES = /^\s*\d{2}:\d{2}(\s*,\s*\d{2}:\d{2})*\s*$/;
 
@@ -11,7 +11,7 @@ export default function AddMedicine({ patient, meds, onClose, onSaved }: {
   patient: Patient; meds: Medicine[]; onClose: () => void; onSaved: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const freeSlots = ([1, 2, 3] as const).filter((s) => !meds.some((m) => m.slot === s));
+  const freeSlots = SLOTS.filter((s) => !meds.some((m) => m.slot === s));
   const [form, setForm] = useState({
     name: "", dose: "1 pill", times: "", slot: String(freeSlots[0] ?? ""), pills_left: "10", expiration: "", color: "blue",
   });
@@ -113,7 +113,7 @@ export default function AddMedicine({ patient, meds, onClose, onSaved }: {
             </label>
             <label className="field">Cabinet slot
               <select value={form.slot} onChange={set("slot")} required>
-                {freeSlots.map((s) => <option key={s} value={s}>Slot {s}</option>)}
+                {freeSlots.map((s) => <option key={s} value={s}>Slot {s}{s === LONG_SLOT ? " (long box)" : ""}</option>)}
               </select>
             </label>
             <label className="field">Pills in slot

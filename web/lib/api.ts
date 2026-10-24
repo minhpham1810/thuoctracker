@@ -4,9 +4,14 @@ export type Patient = {
   id: number; name: string; age: number; doctor_id: number; phone: string; family_phone: string;
 };
 
+// Cabinet boxes: 1-3 top row, 4-6 middle row, 7 the long box across the bottom.
+export const SLOTS = [1, 2, 3, 4, 5, 6, 7] as const;
+export type Slot = (typeof SLOTS)[number];
+export const LONG_SLOT: Slot = 7;
+
 export type Medicine = {
   id: number; patient_id: number; name: string; dose: string; times: string[];
-  slot: 1 | 2 | 3; pills_left: number; expiration: string; color: string;
+  slot: Slot; pills_left: number; expiration: string; color: string;
 };
 
 export type DoseLog = {
