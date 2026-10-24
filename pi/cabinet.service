@@ -1,0 +1,18 @@
+# Runs pi/main.py on boot and restarts it if it crashes. Installed by pi/setup.sh.
+# Logs: journalctl -u cabinet -f
+[Unit]
+Description=ThuocTracker cabinet (pi/main.py)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=thuoctracker
+WorkingDirectory=/home/thuoctracker/thuoctracker
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/home/thuoctracker/thuoctracker/pi/.env
+ExecStart=/home/thuoctracker/thuoctracker/.venv/bin/python pi/main.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
