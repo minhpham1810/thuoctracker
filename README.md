@@ -30,7 +30,7 @@ doctor web ──┘
 | `backend/` | Backend | API, data contract (`models.py`), rules, Twilio |
 | `ai/` | AI | label reading, pill counting, voice (pure functions) |
 | `pi/` | Hardware | servos, camera, mic, speaker runtime |
-| `web/doctor`, `web/cabinet` | Apps | dashboard and cabinet screen, served by the backend |
+| `web/` | Apps | Next.js: doctor dashboard (`/doctor`) and cabinet touchscreen (`/cabinet`) |
 | `app/` | Backend | Expo mobile app for patients, families, doctors: chat + push |
 
 ## Run
@@ -40,8 +40,13 @@ cp .env.example .env            # fill in keys
 python -m venv .venv && source .venv/bin/activate
 pip install -r backend/requirements.txt
 uvicorn backend.main:app --reload --host 0.0.0.0
-# Dashboard: http://localhost:8000/doctor/   Cabinet: http://localhost:8000/cabinet/
+
+# second terminal (Node 20+)
+cd web && npm install && npm run dev
+# Dashboard: http://localhost:3000/doctor   Cabinet: http://localhost:3000/cabinet?patient=1
 ```
+
+The web app proxies `/api/*` to the backend (`BACKEND_URL`, default `http://localhost:8000`).
 
 Mobile app: `cd app && npm install && npx expo start`, scan the QR code with Expo Go, enter `http://<laptop-ip>:8000` on the login screen.
 

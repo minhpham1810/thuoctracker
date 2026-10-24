@@ -1,0 +1,68 @@
+/* Cabinet touchscreen (800x480 to 1024x600). Elderly users: huge type, high contrast, one action. */
+.cab {
+  --tint: var(--primary-soft);
+  --accent: var(--primary);
+  height: 100vh; height: 100dvh; overflow: hidden; display: flex; flex-direction: column;
+  background: var(--tint); color: var(--fg); transition: background .3s;
+  user-select: none; -webkit-user-select: none;
+}
+.cab.mode-taken { --tint: var(--ok-soft); --accent: var(--ok); }
+.cab.mode-already_took { --tint: var(--warn-soft); --accent: var(--warn); }
+.cab.mode-missed { --tint: var(--bad-soft); --accent: var(--bad); }
+
+.cab-bar {
+  display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  padding: 10px 24px; background: var(--primary); color: #fff;
+}
+.cab-brand { display: flex; align-items: center; gap: 12px; font: 700 clamp(18px, 4vh, 26px)/1 var(--font-heading), sans-serif; }
+.cab-clock { display: flex; align-items: baseline; gap: 12px; font: 700 clamp(18px, 4vh, 26px)/1 var(--font-heading), sans-serif; }
+.cab-clock small { font: 500 clamp(14px, 3vh, 18px)/1 var(--font-body), sans-serif; opacity: .9; }
+
+.cab-offline {
+  display: flex; align-items: center; justify-content: center; gap: 10px; padding: 8px;
+  background: var(--fg); color: #fff; font-weight: 600; font-size: clamp(16px, 3.4vh, 20px);
+}
+
+.cab-main {
+  flex: 1; min-height: 0; display: flex; flex-direction: column; gap: clamp(10px, 3vh, 24px);
+  padding: clamp(12px, 3vh, 28px) clamp(16px, 4vw, 40px);
+}
+.cab-hero { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 8px; }
+.cab-icon {
+  display: grid; place-items: center; width: clamp(56px, 14vh, 96px); height: clamp(56px, 14vh, 96px);
+  border-radius: 50%; background: var(--accent); color: #fff;
+}
+.cab-icon .icon { width: 58%; height: 58%; }
+.mode-take .cab-icon { background: var(--pill); color: #fff; box-shadow: 0 0 0 4px #fff; }
+.cab-msg { font-size: clamp(30px, 9vh, 72px); font-weight: 700; letter-spacing: -.01em; max-width: 22ch; }
+.cab-sub { margin: 0; font-size: clamp(18px, 4.4vh, 30px); color: var(--muted); }
+.cab-sub b { color: var(--fg); }
+
+.cab-slots { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(8px, 2vw, 20px); }
+.cab-slot {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: clamp(8px, 2.4vh, 18px) 8px; border-radius: 16px; background: var(--card);
+  border: 3px solid var(--border); text-align: center; transition: border-color .2s, transform .2s;
+}
+.cab-slot-num { font: 700 clamp(28px, 8vh, 56px)/1 var(--font-heading), sans-serif; color: var(--muted); }
+.cab-slot-name { display: flex; align-items: center; gap: 8px; font-size: clamp(15px, 3.4vh, 22px); font-weight: 600; }
+.cab-dot { width: 16px; height: 16px; border-radius: 50%; background: var(--slot-pill); border: 2px solid rgb(0 0 0 / .15); flex: none; }
+.cab-slot.active { border-color: var(--pill); transform: translateY(-4px); box-shadow: 0 0 0 6px color-mix(in srgb, var(--pill) 35%, transparent); }
+.cab-slot.active .cab-slot-num { color: var(--fg); }
+.mode-take .cab-slot.active { animation: glow 1.4s ease-in-out infinite; }
+@keyframes glow { 50% { box-shadow: 0 0 0 14px color-mix(in srgb, var(--pill) 15%, transparent); } }
+.cab-slot-tag {
+  position: absolute; top: -14px; padding: 2px 12px; border-radius: 999px;
+  background: var(--pill); color: #fff; font-weight: 700; font-size: 14px; letter-spacing: .08em;
+  text-shadow: 0 1px 2px rgb(0 0 0 / .4);
+}
+
+.cab-took {
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  min-height: clamp(64px, 15vh, 104px); border: 0; border-radius: 18px;
+  background: var(--ok); color: #fff; font: 700 clamp(26px, 6.5vh, 44px)/1 var(--font-heading), sans-serif;
+  box-shadow: 0 6px 0 #0f5f2d; transition: transform .1s, box-shadow .1s;
+}
+.cab-took .icon { width: 1.1em; height: 1.1em; }
+.cab-took:active { transform: translateY(4px); box-shadow: 0 2px 0 #0f5f2d; }
+.cab-took:disabled { opacity: .7; }

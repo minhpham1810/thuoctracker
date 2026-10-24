@@ -24,7 +24,7 @@ The team coordinates through the repo, not the group chat. Who owns what and the
 - `backend/main.py`: FastAPI routes (contract in TEAM.md; in-memory data, fake AI answers until `ai/` is ready). `backend/models.py`: the shared data contract (Patient, Doctor, Medicine, DoseLog, Alert). Change names there first, then tell the team.
 - `ai/__init__.py`: pure functions: `read_label`, `count_pills`, `transcribe`, `answer`, `speak`. Backend routes wrap them.
 - `pi/main.py`: polls `GET /cabinet/{id}/command`, drives servos/camera/mic/speaker.
-- `web/doctor`, `web/cabinet`: static pages served by the backend. The cabinet page runs full-screen on the Pi touchscreen.
+- `web/`: Next.js 16 app (see `web/AGENTS.md`: read `web/node_modules/next/dist/docs/` before using Next APIs). `/doctor` is the dashboard, `/cabinet?patient=1` is the Pi touchscreen (kiosk mode). Pages are client components that poll `/api/*`, which `web/next.config.ts` proxies to the backend. Types that mirror `models.py` are in `web/lib/api.ts`: change them when the contract changes. Plain CSS, tokens in `web/app/globals.css`. Run with `cd web && npm run dev` (port 3000, bound to 0.0.0.0).
 - `app/`: Expo (React Native) mobile app for patient, family and doctor: status, alerts, per-patient chat, push. Plain JS, no router; screens in `app/src/`. Install packages with `npx expo install`, not npm.
 
 ## Rules the backend owns

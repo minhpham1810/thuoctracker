@@ -4,19 +4,19 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 15:50 Minh Pham (frontend): **Doctor dashboard + cabinet screen are live on the real API**, now a Next.js app in `web/` (whole folder is mine). Run `cd web && npm install && npm run dev` → dashboard `http://<laptop-ip>:3000/doctor`, cabinet `http://<laptop-ip>:3000/cabinet?patient=1`. The browser calls `/api/*` on :3000, which proxies to the backend (`BACKEND_URL`, default `http://localhost:8000`), so no CORS needed. Dashboard has "Pill time now" (calls `/demo/pill_time`) and "Add medicine" (label photo → `/ai/label` → form → `POST /medicines`).
+  - Minh Dau: the dashboard moved from static `web/doctor` to Next.js, so it is no longer served on :8000. It handles cabinet `mode: "missed"` and the new alerts; chat on the dashboard is not built yet.
+  - NEED Thanh (pi): the kiosk URL is now `http://<laptop-ip>:3000/cabinet?patient=1` (port 3000, not 8000).
+  - NEED Minh Dau (backend): please delete the `app.mount("/", StaticFiles(directory="web", ...))` line in `backend/main.py`. `web/` is Next.js source now, so that mount would serve `node_modules`, `.next` and any `web/.env*` file to anyone on the hotspot.
 - 16:40 Minh Dau (app): **First version of the mobile app is in `app/`.** Pick a role (patient, family or doctor). The doctor sees all their patients with taken/missed counts and refill badges; each patient has a Today tab (medicines, pills left, alerts, dose history, "take your pill" banner) and a Chat tab shared by patient, family and doctor. Phone notifications show while the app is running; real push turns on after `npx eas init` (Android also needs a development build). To try it: `cd app && npm install && npx expo start`, open it in Expo Go, and enter `http://<laptop-ip>:8000`. Nobody else needs to change anything.
-
 - 16:00 Minh Dau (backend + app): **Adding a mobile app** (Expo, in `app/`, built by Minh Dau) for patients, families and doctors, with a chat per patient and push notifications. The backend part is ready: chat routes, push registration, and every alert sent by both push and SMS (see "Mobile app" in the contract). Added a 3rd sample patient, Mrs. Hoa.
   - Minh Pham: the web doctor dashboard stays (it's the big screen at the judging table), with no change needed. Optional: show the patient chat on the dashboard with `GET /patients/{id}/messages`.
-
 - 15:35 Minh Dau (backend): **The AI routes now call `ai/`.** `/ai/label`, `/ai/ask` and `/cabinet/{id}/photo` call `read_label`, `count_pills`, `transcribe`, `answer` and `speak`. A function that still raises `NotImplementedError` gets a fake answer, so Minh Pham can push one function at a time and it goes live with no backend change.
   - Minh Pham: match the signatures in `ai/__init__.py` exactly. `answer(question, log)` receives the dose-log shape in this file (contract change 4). `speak` returns MP3 bytes; the backend saves them and serves them at `/audio/…`. Make sure `import ai` never crashes, or the backend won't start.
   - Thanh: `say_url` and `audio_url` become real MP3 links (prefix with `BACKEND_URL`) once `speak` is written; while they're `null`, play the backup `sound`. After a dose the Pi also gets `{"sound": "good_job"}` or `{"sound": "already_took"}`. `/photo` can return `{"count": null}`: carry on, the backend won't guess.
-
 - 15:20 Minh Dau (backend): **The scheduler is running.** Pill time starts a dose on its own, the reminder repeats, a dose with no pill taken is marked missed, and the low-pills and expiring alerts fire once each. Texts go through Twilio, or are printed to the console when `.env` has no keys. Put `DEMO=1` in `.env` for the 30 s missed / 10 s reminder timing.
   - Thanh: **contract change.** A command may come without `open_slot` (e.g. `{"dose_id": 7, "sound": "missed"}`): just play the sound. The same `dose_id` can arrive again as a repeat reminder: open the slot again.
   - Minh Pham: the cabinet `/state` can now be `mode: "missed"`. New alerts appear in `/alerts` on their own, so poll with `?since=`.
-
 - 15:10 Minh Dau (backend): **API is live on in-memory sample data.** Every route in the contract below works with the exact JSON shapes. Run `uvicorn backend.main:app --reload --host 0.0.0.0` from the repo root, or use Minh Dau's laptop IP on the hotspot, port 8000. Fake pill time: `POST /demo/pill_time?medicine_id=1`; reset: `POST /demo/reset`.
   - Minh Pham: build the dashboard on `/patients`, `/patients/{id}/medicines`, `/patients/{id}/doses`, `/alerts`; the cabinet screen polls `/cabinet/1/state`. `/ai/label` and `/ai/ask` return fixed fake answers until your `ai/` functions are pushed. Add a Status line when each one is ready.
   - Thanh: the Pi polls `/cabinet/1/command` and posts photos to `/cabinet/1/photo?dose_id=&phase=before|after`. `say_url` is `null` for now, so play the backup sound named in `sound`.
@@ -28,7 +28,7 @@ Newest first. Everyone (and every agent) reads this after `git pull` and adds a 
 | Person | Owns (only you edit these) | Done means |
 |---|---|---|
 | **Minh Dau**: Backend + mobile app | `backend/` (all of it: `main.py`, `models.py`, rules, Twilio, push, the `/ai/*` route wrappers) and `app/` (Expo mobile app for patient, family, doctor: chat + push) | Every endpoint below returns real data; alerts and texts fire on their own |
-| **Minh Pham**: AI + Frontend | `ai/__init__.py`, `web/doctor/`, `web/cabinet/` | The 5 AI functions work alone; dashboard and cabinet screen run on the real API |
+| **Minh Pham**: AI + Frontend | `ai/__init__.py`, `web/` (Next.js: `/doctor`, `/cabinet`) | The 5 AI functions work alone; dashboard and cabinet screen run on the real API |
 | **Thanh**: Raspberry Pi code | `pi/` (code, backup sounds, Pi software setup) | Pi polls the backend, opens slots, sends photos/recordings, plays audio |
 | **Duy**: Hardware (joins later) | The physical cabinet: wiring, servos, camera mount, audio parts, box. No repo folder | Thanh's code runs on real parts instead of mock mode |
 
@@ -136,7 +136,7 @@ Every alert now goes to the app (dashboard + push to that role's phones) **and**
 Duy wires the hardware later, so write the code first with a **mock mode**: `MOCK=1 python pi/main.py` prints "open slot 2", uses a test JPG instead of the camera, a test WAV instead of the mic, and the laptop speaker. Then flip to real parts one at a time as Duy connects them.
 
 **Hours 1-6**
-- Pi OS, join the hotspot, open `http://<laptop-ip>:8000/cabinet/` full-screen in Chromium kiosk mode.
+- Pi OS, join the hotspot, open `http://<laptop-ip>:3000/cabinet?patient=1` full-screen in Chromium kiosk mode.
 - Poll loop against Minh Dau's fake `/command`. Mock mode working end to end.
 - Keep each hardware call (`open_slot`, `snap`, `play_mp3`, `record_question`) behind the mock flag so Duy can test one part at a time.
 

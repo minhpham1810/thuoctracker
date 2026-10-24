@@ -1,0 +1,28 @@
+/* Shared tokens. Clinical pharmacy palette: teal + white, semantic status colors. */
+:root {
+  --primary: #0e7490;        /* teal 700: white text passes 5.4:1 */
+  --primary-strong: #155e75;
+  --primary-soft: #ecfeff;
+  --bg: #f3f8f9;
+  --card: #ffffff;
+  --fg: #0f2b33;
+  --muted: #52666d;
+  --border: #d5e4e8;
+  --ok: #15803d;   --ok-soft: #dcfce7;
+  --warn: #b45309; --warn-soft: #fef3c7;
+  --bad: #b91c1c;  --bad-soft: #fee2e2;
+  --radius: 12px;
+  --shadow: 0 1px 2px rgb(15 43 51 / .06), 0 2px 8px rgb(15 43 51 / .05);
+}
+* { box-sizing: border-box; }
+html { font: 16px/1.5 var(--font-body), system-ui, sans-serif; color: var(--fg); }
+body { margin: 0; background: var(--bg); min-height: 100vh; }
+h1, h2, h3 { font-family: var(--font-heading), system-ui, sans-serif; line-height: 1.2; margin: 0; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+.icon { width: 20px; height: 20px; flex: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
