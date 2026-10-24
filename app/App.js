@@ -6,7 +6,7 @@ import { api } from './src/api';
 import DoctorHome from './src/DoctorHome';
 import { useNotifyNew, usePoll } from './src/hooks';
 import Login from './src/Login';
-import { setupNotifications } from './src/notify';
+import { onBanner, setupNotifications } from './src/notify';
 import PatientView from './src/PatientView';
 import { colors } from './src/ui';
 
@@ -46,9 +46,27 @@ export default function App() {
         )}
         {user && <Watcher user={user} />}
         <View style={{ flex: 1 }}>{body}</View>
+        <Banner />
         <StatusBar style="dark" />
       </SafeAreaView>
     </SafeAreaProvider>
+  );
+}
+
+// In-app notification for phones where system notifications aren't available (Expo Go on Android).
+function Banner() {
+  const [note, setNote] = useState(null);
+  useEffect(() => {
+    let timer;
+    onBanner((n) => { setNote(n); clearTimeout(timer); timer = setTimeout(() => setNote(null), 5000); });
+    return () => { onBanner(null); clearTimeout(timer); };
+  }, []);
+  if (!note) return null;
+  return (
+    <Pressable style={s.banner} onPress={() => setNote(null)}>
+      <Text style={s.bannerTitle}>{note.title}</Text>
+      <Text style={s.bannerBody}>{note.body}</Text>
+    </Pressable>
   );
 }
 
@@ -88,4 +106,8 @@ const s = StyleSheet.create({
             paddingVertical: 12, backgroundColor: colors.card, borderBottomWidth: 1, borderColor: colors.line },
   headerBtn: { color: colors.primary, fontSize: 16, width: 60 },
   headerTitle: { fontSize: 18, fontWeight: '700', color: colors.text, flex: 1, textAlign: 'center' },
+  banner: { position: 'absolute', top: 60, left: 12, right: 12, backgroundColor: colors.text, borderRadius: 14,
+            padding: 14, elevation: 8, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 10 },
+  bannerTitle: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  bannerBody: { color: '#E4E7EC', fontSize: 15, marginTop: 2 },
 });
