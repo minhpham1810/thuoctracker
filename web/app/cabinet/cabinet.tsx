@@ -6,6 +6,8 @@ import {
   api, daysUntil, fmtDate, LONG_SLOT, pillColor, SLOTS,
   type CabinetState, type DoseLog, type Medicine, type Slot,
 } from "@/lib/api";
+import { Glyph } from "./glyph";
+import Setup from "./setup";
 
 const STATE_MS = 1000;
 const MEDS_MS = 10_000;
@@ -37,6 +39,11 @@ const MODE_ICON: Record<CabinetState["mode"], IconName> = {
 
 export default function Cabinet() {
   const [patientId, setPatientId] = useState<number | null>(null);
+  // Whose cabinet: ?patient=N in the URL wins (no sign-in); otherwise the patient signed in on
+  // this screen, saved here. ?hw=N (kiosk.sh) is the patient the Pi hardware serves: only they can sign in.
+  const [pinned, setPinned] = useState(false);
+  const [hw, setHw] = useState<number | null>(null);
+  const [setup, setSetup] = useState<"first" | "switch" | null>(null);
   const [state, setState] = useState<CabinetState | null>(null);
   const [meds, setMeds] = useState<Medicine[]>([]);
   const [doses, setDoses] = useState<DoseLog[]>([]);
@@ -52,10 +59,23 @@ export default function Cabinet() {
   const recorder = useRef<MediaRecorder | null>(null);
   const closeDetail = useCallback(() => setDetail(null), []);
   const closeSheet = useCallback(() => setSheet(null), []);
+  const cancelSetup = useCallback(() => setSetup(null), []);
 
   useEffect(() => {
     const t = setTimeout(() => {
-      setPatientId(Number(new URLSearchParams(location.search).get("patient")) || 1);
+      const url = new URLSearchParams(location.search);
+      const urlId = Number(url.get("patient")) || null;
+      const hwId = Number(url.get("hw")) || null;
+      const saved = Number(loadPref("cab-patient", null, "")) || null;
+      setHw(hwId);
+      if (urlId) {
+        setPinned(true);
+        setPatientId(urlId);
+      } else if (saved && (!hwId || saved === hwId)) {
+        setPatientId(saved);
+      } else {
+        setSetup("first");
+      }
       setTheme(loadPref("cab-theme", THEMES, "auto"));
       setTextSize(loadPref("cab-text", TEXT_SIZES, "normal"));
     }, 0);
@@ -63,8 +83,8 @@ export default function Cabinet() {
   }, []);
 
   const loadState = useCallback(async () => {
+    setNow(new Date()); // the clock (and auto dark) runs even before setup
     if (!patientId) return;
-    setNow(new Date());
     try {
       setState(await api<CabinetState>(`/cabinet/${patientId}/state`));
       setOnline(true);
@@ -87,7 +107,7 @@ export default function Cabinet() {
 
   useEffect(() => {
     const first = setTimeout(loadState, 0);
-    const t = setInterval(loadState, STATE_MS);
+    const t = setInterval(loadState, STATE_MS); // also ticks the clock before setup
     return () => { clearTimeout(first); clearInterval(t); };
   }, [loadState]);
 
@@ -117,10 +137,10 @@ export default function Cabinet() {
     return () => clearTimeout(t);
   }, [sheet, theme, textSize]); // a tap on a setting restarts the timer
 
-  // a pill prompt closes any open box details or menu for good, so they don't pop back after it
+  // a pill prompt closes any open box details, menu or patient switch for good, so they don't pop back after it
   useEffect(() => {
     if (mode !== "take") return;
-    const t = setTimeout(() => { setDetail(null); setSheet(null); }, 0);
+    const t = setTimeout(() => { setDetail(null); setSheet(null); setSetup((s) => (s === "switch" ? null : s)); }, 0);
     return () => clearTimeout(t);
   }, [mode]);
 
@@ -132,6 +152,16 @@ export default function Cabinet() {
   function pickTextSize(s: TextSize) {
     setTextSize(s);
     savePref("cab-text", s);
+  }
+
+  function signedIn(id: number) {
+    savePref("cab-patient", String(id));
+    if (id !== patientId) {
+      // drop the old patient's screen so it can't flash under the new name
+      setState(null); setMeds([]); setDoses([]); setName(""); setAsk({ phase: "off" });
+    }
+    setPatientId(id);
+    setSetup(null);
   }
 
   async function tookIt() {
@@ -200,10 +230,18 @@ export default function Cabinet() {
   const asking = ask.phase !== "off" && mode !== "take";
   const dark = theme === "dark" || (theme === "auto" && now !== null && isNight(now));
   const covered = !!shown || !!sheet; // while a card is open, only the card can be reached
+  const cls = `cab mode-${mode}${dark ? " dark" : ""}${textSize === "large" ? " text-large" : ""}`;
+
+  if (setup) {
+    return (
+      <div className={cls}>
+        <Setup hw={hw} onDone={signedIn} onCancel={setup === "switch" ? cancelSetup : undefined} />
+      </div>
+    );
+  }
 
   return (
-    <div className={`cab mode-${mode}${dark ? " dark" : ""}${textSize === "large" ? " text-large" : ""}`}
-      style={{ "--pill": color } as React.CSSProperties}>
+    <div className={cls} style={{ "--pill": color } as React.CSSProperties}>
       <header className="cab-bar" inert={covered}>
         <button type="button" className="cab-menu" aria-haspopup="dialog"
           onClick={() => { setDetail(null); setSheet({ view: "menu" }); }}>
@@ -295,7 +333,8 @@ export default function Cabinet() {
       {shown && <Details m={shown} onClose={closeDetail} />}
       {sheet?.view === "menu" && (
         <Menu theme={theme} onTheme={pickTheme} textSize={textSize} onTextSize={pickTextSize}
-          onToday={() => setSheet({ view: "today", fromMenu: true })} onClose={closeSheet} />
+          onToday={() => setSheet({ view: "today", fromMenu: true })} onClose={closeSheet}
+          onSwitch={pinned ? undefined : () => { setSheet(null); setSetup("switch"); }} />
       )}
       {sheet?.view === "today" && (
         <TodayList items={today} onBack={sheet.fromMenu ? () => setSheet({ view: "menu" }) : undefined}
@@ -381,9 +420,10 @@ function Details({ m, onClose }: { m: Medicine; onClose: () => void }) {
 }
 
 // Screen settings and today's full list. Never anything that changes a dose.
-function Menu({ theme, onTheme, textSize, onTextSize, onToday, onClose }: {
+// onSwitch: missing when the URL fixes the patient (?patient=N)
+function Menu({ theme, onTheme, textSize, onTextSize, onToday, onSwitch, onClose }: {
   theme: Theme; onTheme: (t: Theme) => void; textSize: TextSize; onTextSize: (s: TextSize) => void;
-  onToday: () => void; onClose: () => void;
+  onToday: () => void; onSwitch?: () => void; onClose: () => void;
 }) {
   const themes: { v: Theme; label: string; icon: React.ReactNode }[] = [
     { v: "light", label: "Light", icon: <Glyph name="sun" /> },
@@ -415,7 +455,10 @@ function Menu({ theme, onTheme, textSize, onTextSize, onToday, onClose }: {
           </button>
         </div>
       </div>
-      <button type="button" className="cab-sheet-btn" onClick={onToday}><Glyph name="list" /> Today&apos;s pills</button>
+      <div className="cab-sheet-actions">
+        <button type="button" className="cab-sheet-btn" onClick={onToday}><Glyph name="list" /> Today&apos;s pills</button>
+        {onSwitch && <button type="button" className="cab-sheet-btn" onClick={onSwitch}><Glyph name="users" /> Switch patient</button>}
+      </div>
       <button type="button" className="cab-detail-close" data-autofocus onClick={onClose}><Icon name="close" /> Close</button>
     </Modal>
   );
@@ -447,27 +490,11 @@ function TodayList({ items, onBack, onClose }: { items: TodayItem[]; onBack?: ()
   );
 }
 
-// Icons only this screen uses: Lucide paths, drawn like components/icon.
-const GLYPHS = {
-  menu: <><path d="M4 6h16" /><path d="M4 12h16" /><path d="M4 18h16" /></>,
-  sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></>,
-  moon: <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />,
-  list: <><path d="M3 5h.01" /><path d="M3 12h.01" /><path d="M3 19h.01" /><path d="M8 5h13" /><path d="M8 12h13" /><path d="M8 19h13" /></>,
-  back: <><path d="m12 19-7-7 7-7" /><path d="M19 12H5" /></>,
-};
-
-function Glyph({ name }: { name: keyof typeof GLYPHS }) {
-  return (
-    <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      {GLYPHS[name]}
-    </svg>
-  );
-}
-
-function loadPref<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
+// allowed: null takes any saved string
+function loadPref<T extends string>(key: string, allowed: readonly T[] | null, fallback: T): T {
   try {
     const v = localStorage.getItem(key);
+    if (!allowed) return (v as T | null) ?? fallback;
     return allowed.find((a) => a === v) ?? fallback;
   } catch {
     return fallback; // storage blocked: use the default

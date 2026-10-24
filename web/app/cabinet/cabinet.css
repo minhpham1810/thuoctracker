@@ -284,6 +284,51 @@ button.cab-door::after {
 .cab-sched .due .cab-sched-status { background: var(--primary); color: #fff; }
 .cab-sched-none { margin: 0; color: var(--muted); font-size: calc(clamp(18px, 4.4vh, 26px) * var(--fs)); }
 
+/* One-time setup: sign in with the patient's account on a built-in keyboard (the Pi has none).
+   Sized for 800x480: fields on top, 5 rows of keys at least 48px tall below. */
+.cab-setup { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: clamp(6px, 1.4vh, 12px); padding: clamp(8px, 2vh, 18px) clamp(12px, 2.4vw, 24px); }
+.cab-setup-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.cab-setup h1 { margin: 0; font-size: clamp(22px, 5.6vh, 36px); line-height: 1.1; }
+.cab-setup-head p { margin: 2px 0 0; color: var(--muted); font-size: clamp(15px, 3.4vh, 20px); line-height: 1.25; }
+.cab-setup-head .cab-setup-error { color: var(--bad-ink); font-weight: 700; }
+.cab-setup-cancel {
+  flex: none; display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 16px; border-radius: 12px;
+  border: 2px solid var(--border); background: var(--card); color: var(--fg); font: 700 clamp(16px, 3.6vh, 20px)/1 var(--font-heading), sans-serif;
+}
+.cab-setup-cancel .icon { width: 1.1em; height: 1.1em; }
+.cab-field {
+  display: flex; align-items: center; gap: 12px; min-height: clamp(44px, 9.6vh, 60px); padding: 0 6px 0 14px;
+  border: 3px solid var(--border); border-radius: 12px; background: var(--card);
+}
+.cab-field.on { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 25%, transparent); }
+.cab-field > span { flex: none; width: 5.2em; color: var(--muted); font-weight: 700; font-size: clamp(15px, 3.4vh, 20px); }
+.cab-field input {
+  flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--fg);
+  font: 600 clamp(18px, 4.4vh, 26px)/1.2 var(--font-body), sans-serif;
+}
+.cab-field input::placeholder { color: var(--muted); opacity: .6; }
+.cab-field-show {
+  flex: none; min-height: 38px; padding: 0 14px; border-radius: 9px; border: 2px solid var(--border);
+  background: var(--bg); color: var(--fg); font-weight: 700; font-size: clamp(14px, 3.2vh, 18px);
+}
+.cab-kb { flex: 1; min-height: 0; display: grid; grid-template-rows: repeat(5, minmax(0, 1fr)); gap: clamp(4px, 1vh, 8px); }
+.cab-kb-row { display: grid; grid-template-columns: repeat(20, minmax(0, 1fr)); gap: clamp(4px, .8vw, 8px); }
+/* the a-l row sits half a key in, like a real keyboard */
+.cab-kb-row.inset { padding: 0 5%; grid-template-columns: repeat(18, minmax(0, 1fr)); }
+.cab-kb button {
+  grid-column: span 2; min-height: 44px; display: grid; place-items: center; border-radius: 10px;
+  border: 0; background: var(--card); color: var(--fg); box-shadow: 0 3px 0 var(--border);
+  font: 600 clamp(18px, 4.6vh, 28px)/1 var(--font-body), sans-serif;
+}
+.cab-kb button:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--border); background: var(--bg); }
+.cab-kb button .icon { width: 1.1em; height: 1.1em; }
+.cab-kb .w3 { grid-column: span 3; background: var(--bg); }
+.cab-kb .w4 { grid-column: span 4; font-size: clamp(16px, 3.8vh, 22px); }
+.cab-kb .w8 { grid-column: span 8; }
+.cab-kb .on { background: var(--primary); color: #fff; }
+.cab-kb .go { background: var(--primary); color: #fff; box-shadow: 0 3px 0 color-mix(in srgb, var(--primary) 60%, #000); font-family: var(--font-heading), sans-serif; font-weight: 700; }
+.cab-kb .go:disabled { opacity: .75; }
+
 /* Tall screens (or a laptop window for testing): stack instead of side by side */
 @media (max-aspect-ratio: 1/1) {
   .cab-main { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
