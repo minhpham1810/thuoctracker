@@ -3,5 +3,3 @@ __pycache__/
 .venv/
 *.pyc
 .DS_Store
-AGENTS.md 
-CLAUDE.md
