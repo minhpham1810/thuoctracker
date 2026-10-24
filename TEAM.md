@@ -4,6 +4,10 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 15:35 Minh Dau (backend): **The AI routes now call `ai/`.** `/ai/label`, `/ai/ask` and `/cabinet/{id}/photo` call `read_label`, `count_pills`, `transcribe`, `answer` and `speak`. A function that still raises `NotImplementedError` gets a fake answer, so Minh Pham can push one function at a time and it goes live with no backend change.
+  - Minh Pham: match the signatures in `ai/__init__.py` exactly. `answer(question, log)` receives the dose-log shape in this file (contract change 4). `speak` returns MP3 bytes; the backend saves them and serves them at `/audio/…`. Make sure `import ai` never crashes, or the backend won't start.
+  - Thanh: `say_url` and `audio_url` become real MP3 links (prefix with `BACKEND_URL`) once `speak` is written; while they're `null`, play the backup `sound`. After a dose the Pi also gets `{"sound": "good_job"}` or `{"sound": "already_took"}`. `/photo` can return `{"count": null}`: carry on, the backend won't guess.
+
 - 15:20 Minh Dau (backend): **The scheduler is running.** Pill time starts a dose on its own, the reminder repeats, a dose with no pill taken is marked missed, and the low-pills and expiring alerts fire once each. Texts go through Twilio, or are printed to the console when `.env` has no keys. Put `DEMO=1` in `.env` for the 30 s missed / 10 s reminder timing.
   - Thanh: **contract change.** A command may come without `open_slot` (e.g. `{"dose_id": 7, "sound": "missed"}`): just play the sound. The same `dose_id` can arrive again as a repeat reminder: open the slot again.
   - Minh Pham: the cabinet `/state` can now be `mode: "missed"`. New alerts appear in `/alerts` on their own, so poll with `?since=`.
@@ -54,7 +58,7 @@ The Pi and the cabinet screen both poll. If they share one route, whoever reads 
 |---|---|---|
 | `GET /cabinet/{id}/command` | **Pi only.** Each command is given out once | `{}` or `{"dose_id": 7, "open_slot": 2, "say_url": "/audio/7.mp3", "sound": "time_for_pill"}` |
 | `GET /cabinet/{id}/state` | **Screen only.** Read-only, safe to poll | `{"mode": "idle" \| "take" \| "taken" \| "already_took" \| "missed", "dose_id", "slot", "medicine", "color", "message"}` |
-| `POST /cabinet/{id}/photo?dose_id=7&phase=before\|after` (photo) | Pi | `{"count": 10}`; after the "after" photo the backend decides taken (before − after == 1) |
+| `POST /cabinet/{id}/photo?dose_id=7&phase=before\|after` (photo) | Pi | `{"count": 10}` or `{"count": null}` if counting failed; after the "after" photo the backend decides taken (before − after == 1). Never guesses: on `null` the dose stays pending until "I took it" |
 | `POST /doses/{dose_id}/taken?method=screen` | Screen "I took it" button | updated `DoseLog` |
 | `POST /ai/ask?patient_id=1` (audio) | Pi | `{"text": "...", "audio_url": "/audio/q12.mp3"}` |
 | `GET /audio/{file}.mp3` | Pi | MP3 the backend made with `speak()` |

@@ -6,6 +6,7 @@ Routes and response shapes follow the contract in TEAM.md. Data is in memory and
 seeded with sample patients; the AI routes return fake answers until ai/ is ready.
 """
 import asyncio
+import hashlib
 import os
 from contextlib import asynccontextmanager
 from datetime import date, datetime, time, timedelta
@@ -15,6 +16,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
 
+import ai
+
 from .models import Alert, Doctor, DoseLog, Medicine, Patient
 from .sms import send_sms
 
@@ -23,6 +26,8 @@ DEMO = os.environ.get("DEMO") == "1"  # shortened times so judges see it live
 MISSED_AFTER = timedelta(seconds=30) if DEMO else timedelta(minutes=30)
 REMIND_EVERY = timedelta(seconds=10) if DEMO else timedelta(minutes=10)
 TICK_SECONDS = 2
+AUDIO_DIR = "audio"  # MP3s from ai.speak(), served at /audio/
+os.makedirs(AUDIO_DIR, exist_ok=True)
 
 
 @asynccontextmanager
@@ -103,18 +108,63 @@ def set_state(patient_id: int, mode: str, dose: DoseLog, message: str):
                                "medicine": m.name, "color": m.color, "message": message}
 
 
+_unset = object()
+
+
+def try_ai(fn, *args, fallback, on_error=_unset):
+    """Call an ai/ function; `fallback` while it's unwritten, `on_error` (default: fallback) if it fails."""
+    try:
+        return fn(*args)
+    except NotImplementedError:
+        return fallback
+    except Exception as e:
+        print(f"[ai] {fn.__name__} failed: {e!r}")
+        return fallback if on_error is _unset else on_error
+
+
+def speech_url(text: str) -> Optional[str]:
+    """MP3 for `text` via ai.speak(), cached by text. None -> Pi plays its backup sound."""
+    name = hashlib.sha1(text.encode()).hexdigest()[:12] + ".mp3"
+    path = os.path.join(AUDIO_DIR, name)
+    if not os.path.exists(path):
+        mp3 = try_ai(ai.speak, text, fallback=None)
+        if not mp3:
+            return None
+        with open(path, "wb") as f:
+            f.write(mp3)
+    return f"/audio/{name}"
+
+
+def say(patient_id: int, dose: DoseLog, text: str, sound: str, open_slot: Optional[int] = None):
+    """Queue audio for the Pi; open_slot only when the door should open."""
+    cmd = {"dose_id": dose.id, "say_url": speech_url(text), "sound": sound}
+    if open_slot:
+        cmd["open_slot"] = open_slot
+    push_command(patient_id, cmd)
+
+
 def mark_taken(dose: DoseLog, method: Literal["camera", "screen"]):
     m = find("medicines", dose.medicine_id)
     if dose.status == "taken":
         set_state(m.patient_id, "already_took", dose, "You already took this one.")
+        say(m.patient_id, dose, "You already took this one.", "already_took")
         return
     dose.status, dose.taken_at, dose.method = "taken", datetime.now(), method
     m.pills_left = max(m.pills_left - 1, 0)
     set_state(m.patient_id, "taken", dose, "Good job!")
+    say(m.patient_id, dose, "Good job!", "good_job")
 
 
 def push_command(patient_id: int, cmd: dict):
     db["commands"].setdefault(patient_id, []).append(cmd)
+
+
+def dose_log(patient_id: int) -> list[dict]:
+    """Dose log in the shape ai.answer() expects (see TEAM.md)."""
+    names = {m.id: m.name for m in db["medicines"]}
+    return [{"medicine": names[d.medicine_id], "due_at": d.due_at.isoformat(), "status": d.status,
+             "taken_at": d.taken_at.isoformat() if d.taken_at else None}
+            for d in patient_doses(patient_id)]
 
 
 def add_alert(type: str, to: Literal["doctor", "family"], p: Patient, message: str):
@@ -127,8 +177,7 @@ def add_alert(type: str, to: Literal["doctor", "family"], p: Patient, message: s
 
 def remind(dose: DoseLog, m: Medicine):
     db["reminded"][dose.id] = datetime.now()
-    push_command(m.patient_id, {"dose_id": dose.id, "open_slot": m.slot, "say_url": None,
-                                "sound": "time_for_pill"})
+    say(m.patient_id, dose, f"Time for your {m.color} pill, {m.name}.", "time_for_pill", open_slot=m.slot)
     set_state(m.patient_id, "take", dose, f"Take your {m.color} pill now ({m.name})")
 
 
@@ -169,7 +218,7 @@ def tick():
             d.status = "missed"
             p = find("patients", m.patient_id)
             set_state(p.id, "missed", d, "You missed your pill.")
-            push_command(p.id, {"dose_id": d.id, "say_url": None, "sound": "missed"})
+            say(p.id, d, "You missed your pill.", "missed")
             add_alert("missed", "family", p, f"{p.name} missed {m.name} ({d.due_at:%H:%M}).")
         elif now - db["reminded"].get(d.id, d.due_at) >= REMIND_EVERY:
             remind(d, m)
@@ -237,17 +286,23 @@ def list_alerts(since: Optional[datetime] = None) -> list[Alert]:
 
 
 # --- AI (wraps ai/; fake answers until those functions are ready) -----------
+# sync defs so FastAPI runs the slow Gemini/ElevenLabs calls in a thread
 @app.post("/ai/label")
-async def read_label(photo: UploadFile = File(...)):
+def read_label(photo: UploadFile = File(...)):
     """Label photo -> Medicine draft fields."""
-    return {"name": "Aspirin", "dose": "1 pill", "times": ["08:00", "20:00"],
+    fake = {"name": "Aspirin", "dose": "1 pill", "times": ["08:00", "20:00"],
             "expiration": str(date.today() + timedelta(days=180))}
+    return try_ai(ai.read_label, photo.file.read(), fallback=fake)
 
 
 @app.post("/ai/ask")
-async def ask(patient_id: int, audio: UploadFile = File(...)):
+def ask(patient_id: int, audio: UploadFile = File(...)):
     """Question audio -> answer text + MP3 url, answered from the dose log."""
-    return {"text": "Yes, you took your Aspirin this morning.", "audio_url": None}
+    find("patients", patient_id)
+    question = try_ai(ai.transcribe, audio.file.read(), fallback="Did I take my pill today?")
+    text = try_ai(ai.answer, question, dose_log(patient_id),
+                  fallback="Sorry, I can't answer right now. Please check the screen.")
+    return {"text": text, "audio_url": speech_url(text)}
 
 
 # --- Cabinet -----------------------------------------------------------------
@@ -265,15 +320,19 @@ def cabinet_state(patient_id: int):
 
 
 @app.post("/cabinet/{patient_id}/photo")
-async def cabinet_photo(patient_id: int, dose_id: int, phase: Literal["before", "after"],
-                        photo: UploadFile = File(...)):
+def cabinet_photo(patient_id: int, dose_id: int, phase: Literal["before", "after"],
+                  photo: UploadFile = File(...)):
     """Pi sends before/after slot photos; after the 'after' photo we decide taken."""
     dose = find("doses", dose_id)
     m = find("medicines", dose.medicine_id)
     counts = db["counts"].setdefault(dose_id, {})
     # fake count until ai.count_pills is ready: pretend one pill was removed
-    counts[phase] = m.pills_left if phase == "before" else counts.get("before", m.pills_left) - 1
-    if phase == "after" and counts.get("before", 0) - counts["after"] == 1:
+    before = counts.get("before")
+    fake = m.pills_left if phase == "before" or before is None else before - 1
+    # real count failed -> None: don't guess, the patient taps "I took it" instead
+    counts[phase] = try_ai(ai.count_pills, photo.file.read(), fallback=fake, on_error=None)
+    before, after = counts.get("before"), counts.get("after")
+    if phase == "after" and before is not None and after is not None and before - after == 1:
         mark_taken(dose, "camera")
     return {"count": counts[phase]}
 
@@ -291,5 +350,6 @@ def demo_reset():
     return {"ok": True}
 
 
+app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
 # Apps owner's pages: /doctor and /cabinet. Mounted last so API routes win.
 app.mount("/", StaticFiles(directory="web", html=True), name="web")
