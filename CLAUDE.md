@@ -39,9 +39,12 @@ The team coordinates through the repo, not the group chat. Who owns what and the
 ## Commands
 
 ```bash
-source .venv/bin/activate
-uvicorn backend.main:app --reload --host 0.0.0.0   # from repo root
+.venv/bin/python -m uvicorn backend.main:app --reload --host 0.0.0.0   # backend :8000, from repo root (Windows: .venv\Scripts\python)
+cd web && npm run dev                                                  # dashboard + cabinet :3000
+cd app && npx expo start                                               # mobile app, open in Expo Go
 ```
+
+Full setup and troubleshooting: README.md "Run".
 
 Secrets live in `.env` (see `.env.example`); never commit it.
 

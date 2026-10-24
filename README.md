@@ -35,20 +35,44 @@ doctor web ──┘
 
 ## Run
 
-```bash
-cp .env.example .env            # fill in keys
-python -m venv .venv && source .venv/bin/activate
-pip install -r backend/requirements.txt
-uvicorn backend.main:app --reload --host 0.0.0.0
+Three terminals on the backend laptop, all from the repo root. Laptop, phones and Pi must be on the same **2.4 GHz phone hotspot** (campus WiFi blocks device-to-device traffic). Find the laptop IP with `ipconfig` (Windows) or `ipconfig getifaddr en0` (Mac).
 
-# second terminal (Node 20+)
-cd web && npm install && npm run dev
-# Dashboard: http://localhost:3000/doctor   Cabinet: http://localhost:3000/cabinet?patient=1
+**One-time setup**
+
+```bash
+cp .env.example .env                      # fill in keys; DEMO=1 for 30 s timings
+python -m venv .venv
+.venv/bin/pip install -r backend/requirements.txt          # Windows: .venv\Scripts\pip ...
+cd web && npm install && cd ..
+cd app && npm install && cd ..
 ```
 
-The web app proxies `/api/*` to the backend (`BACKEND_URL`, default `http://localhost:8000`).
+**1. Backend (port 8000)**
 
-Mobile app: `cd app && npm install && npx expo start`, scan the QR code with Expo Go, enter `http://<laptop-ip>:8000` on the login screen.
+```bash
+.venv/bin/python -m uvicorn backend.main:app --reload --host 0.0.0.0
+# Windows: .venv\Scripts\python -m uvicorn backend.main:app --reload --host 0.0.0.0
+```
+
+API docs: `http://localhost:8000/docs`. Restart after editing `.env` (`--reload` only watches `.py`).
+
+**2. Web: doctor dashboard + cabinet screen (port 3000)**
+
+```bash
+cd web && npm run dev
+```
+
+Dashboard `http://localhost:3000/doctor`, cabinet `http://<laptop-ip>:3000/cabinet?patient=1`. The web app proxies `/api/*` to the backend (`BACKEND_URL`, default `http://localhost:8000`).
+
+**3. Mobile app (Expo)**
+
+```bash
+cd app && npx expo start          # or: npx expo start --tunnel   if the phone can't load it
+```
+
+Install **Expo Go** on the phone, scan the QR code (iPhone: Camera app; Android: inside Expo Go). On the login screen enter `http://<laptop-ip>:8000`, pick a role. Check the phone can reach the backend by opening `http://<laptop-ip>:8000/health` in its browser. Allow Python and Node through Windows Firewall when asked.
+
+Notifications: in Expo Go they show while the app is running. Real push needs `npx eas init` in `app/` (Expo account), and on Android a development build (`npx eas build --profile development --platform android`).
 
 On the Pi: `pip install -r pi/requirements.txt`, then `BACKEND_URL=http://<laptop-ip>:8000 python pi/main.py`.
 Use a 2.4 GHz phone hotspot for the laptop and the Pi, not campus WiFi.
