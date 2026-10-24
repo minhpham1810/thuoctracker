@@ -41,6 +41,26 @@ class DoseLog(BaseModel):
     method: Optional[Literal["camera", "screen"]] = None
 
 
+Role = Literal["patient", "family", "doctor"]
+
+
+class Message(BaseModel):
+    """Chat line. One chat per patient: the patient, their family and their doctor."""
+    id: Optional[int] = None
+    patient_id: int
+    sender: Role
+    sender_name: str
+    text: str
+    at: Optional[datetime] = None  # set by the backend
+
+
+class PushToken(BaseModel):
+    """Expo push token from the mobile app. user_id is the patient id for patient/family, doctor id for doctor."""
+    role: Role
+    user_id: int
+    token: str
+
+
 class Alert(BaseModel):
     id: Optional[int] = None
     type: Literal["missed", "low_pills", "expiring_soon"]

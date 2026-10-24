@@ -18,7 +18,8 @@ from fastapi.staticfiles import StaticFiles
 
 import ai
 
-from .models import Alert, Doctor, DoseLog, Medicine, Patient
+from .models import Alert, Doctor, DoseLog, Medicine, Message, Patient, PushToken, Role
+from .push import send_push
 from .sms import send_sms
 
 load_dotenv()
@@ -41,6 +42,8 @@ app = FastAPI(title="ThuocTracker", lifespan=lifespan)
 
 # shortcut: in-memory store, swap for SQLite if we need data to survive restarts
 db: dict = {}
+# (role, user_id) -> Expo push tokens. Outside db so /demo/reset keeps phones registered.
+push_tokens: dict[tuple[str, int], set[str]] = {}
 
 
 def seed():
@@ -54,6 +57,8 @@ def seed():
                     phone="+15705514374", family_phone="+15705514374"),  # Minh Dau's phone for the demo
             Patient(id=2, name="Mr. Tran", age=82, doctor_id=1,
                     phone="+15550000003", family_phone="+15550000004"),
+            Patient(id=3, name="Mrs. Hoa", age=74, doctor_id=1,
+                    phone="+15550000005", family_phone="+15550000006"),
         ],
         medicines=[
             Medicine(id=1, patient_id=1, name="Aspirin", dose="1 pill", times=["08:00", "20:00"],
@@ -62,6 +67,8 @@ def seed():
                      slot=2, pills_left=4, expiration=today + timedelta(days=5), color="red"),
             Medicine(id=3, patient_id=2, name="Lisinopril", dose="1 pill", times=["09:00"],
                      slot=1, pills_left=20, expiration=today + timedelta(days=200), color="yellow"),
+            Medicine(id=4, patient_id=3, name="Atorvastatin", dose="1 pill", times=["21:00"],
+                     slot=1, pills_left=15, expiration=today + timedelta(days=120), color="white"),
         ],
         doses=[
             DoseLog(id=1, medicine_id=1, due_at=now - timedelta(hours=12),
@@ -73,6 +80,12 @@ def seed():
                   message="Grandma Lan missed Metformin (12:00).", at=now - timedelta(hours=23)),
             Alert(id=2, type="low_pills", to="doctor", patient_id=1,
                   message="Grandma Lan has 4 Metformin left. Refill needed.", at=now - timedelta(hours=1)),
+        ],
+        messages=[
+            Message(id=1, patient_id=1, sender="family", sender_name="Minh (grandson)",
+                    text="Dr. Nguyen, Grandma seems tired after the new Metformin.", at=now - timedelta(hours=3)),
+            Message(id=2, patient_id=1, sender="doctor", sender_name="Dr. Nguyen",
+                    text="Thanks for telling me. Let's talk at her visit on Friday.", at=now - timedelta(hours=2)),
         ],
         commands={},  # patient_id -> list of pending Pi commands
         state={},     # patient_id -> what the cabinet screen shows
@@ -167,9 +180,17 @@ def dose_log(patient_id: int) -> list[dict]:
             for d in patient_doses(patient_id)]
 
 
+def push_to(role: Role, p: Patient, title: str, body: str):
+    """Push to the phones of `role` in patient p's care circle."""
+    user_id = p.doctor_id if role == "doctor" else p.id
+    send_push(sorted(push_tokens.get((role, user_id), ())), title, body, {"patient_id": p.id})
+
+
 def add_alert(type: str, to: Literal["doctor", "family"], p: Patient, message: str):
+    """Every alert goes to the app (dashboard + push) and by SMS."""
     db["alerts"].append(Alert(id=next_id("alerts"), type=type, to=to, patient_id=p.id,
                               message=message, at=datetime.now()))
+    push_to(to, p, "ThuocTracker", message)
     phone = p.family_phone if to == "family" else find("doctors", p.doctor_id).phone
     if phone:
         send_sms(phone, message)
@@ -185,7 +206,10 @@ def start_dose(m: Medicine, due_at: datetime) -> DoseLog:
     dose = DoseLog(id=next_id("doses"), medicine_id=m.id, due_at=due_at)
     db["doses"].append(dose)
     remind(dose, m)
-    send_sms(find("patients", m.patient_id).phone, f"Time for your {m.color} pill ({m.name}).")
+    p = find("patients", m.patient_id)
+    text = f"Time for your {m.color} pill ({m.name})."
+    push_to("patient", p, "Pill time", text)
+    send_sms(p.phone, text)
     return dose
 
 
@@ -283,6 +307,39 @@ def dose_taken(dose_id: int, method: Literal["camera", "screen"] = "screen") -> 
 @app.get("/alerts")
 def list_alerts(since: Optional[datetime] = None) -> list[Alert]:
     return [a for a in db["alerts"] if since is None or a.at > since]
+
+
+@app.get("/doctors")
+def list_doctors() -> list[Doctor]:
+    return db["doctors"]
+
+
+# --- Mobile app: chat + push -------------------------------------------------
+@app.get("/patients/{patient_id}/messages")
+def list_messages(patient_id: int, since: Optional[datetime] = None) -> list[Message]:
+    """Chat for one patient's circle (patient, family, doctor), oldest first."""
+    find("patients", patient_id)
+    return [m for m in db["messages"] if m.patient_id == patient_id and (since is None or m.at > since)]
+
+
+@app.post("/patients/{patient_id}/messages")
+def send_message(patient_id: int, msg: Message) -> Message:
+    p = find("patients", patient_id)
+    msg.id, msg.patient_id, msg.at = next_id("messages"), patient_id, datetime.now()
+    db["messages"].append(msg)
+    for role in ("patient", "family", "doctor"):
+        if role != msg.sender:
+            push_to(role, p, msg.sender_name, msg.text)
+    return msg
+
+
+@app.post("/push/register")
+def register_push(t: PushToken):
+    """The app sends its Expo push token after the user picks who they are."""
+    for tokens in push_tokens.values():
+        tokens.discard(t.token)  # one phone = one identity (switching roles in the demo)
+    push_tokens.setdefault((t.role, t.user_id), set()).add(t.token)
+    return {"ok": True}
 
 
 # --- AI (wraps ai/; fake answers until those functions are ready) -----------

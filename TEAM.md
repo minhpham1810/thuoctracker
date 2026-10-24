@@ -4,6 +4,9 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 16:00 Minh Dau (backend + app): **Adding a mobile app** (Expo, in `app/`, built by Minh Dau) for patients, families and doctors, with a chat per patient and push notifications. The backend part is ready: chat routes, push registration, and every alert sent by both push and SMS (see "Mobile app" in the contract). Added a 3rd sample patient, Mrs. Hoa.
+  - Minh Pham: the web doctor dashboard stays (it's the big screen at the judging table), with no change needed. Optional: show the patient chat on the dashboard with `GET /patients/{id}/messages`.
+
 - 15:35 Minh Dau (backend): **The AI routes now call `ai/`.** `/ai/label`, `/ai/ask` and `/cabinet/{id}/photo` call `read_label`, `count_pills`, `transcribe`, `answer` and `speak`. A function that still raises `NotImplementedError` gets a fake answer, so Minh Pham can push one function at a time and it goes live with no backend change.
   - Minh Pham: match the signatures in `ai/__init__.py` exactly. `answer(question, log)` receives the dose-log shape in this file (contract change 4). `speak` returns MP3 bytes; the backend saves them and serves them at `/audio/…`. Make sure `import ai` never crashes, or the backend won't start.
   - Thanh: `say_url` and `audio_url` become real MP3 links (prefix with `BACKEND_URL`) once `speak` is written; while they're `null`, play the backup `sound`. After a dose the Pi also gets `{"sound": "good_job"}` or `{"sound": "already_took"}`. `/photo` can return `{"count": null}`: carry on, the backend won't guess.
@@ -22,7 +25,7 @@ Newest first. Everyone (and every agent) reads this after `git pull` and adds a 
 
 | Person | Owns (only you edit these) | Done means |
 |---|---|---|
-| **Minh Dau**: Backend | `backend/` (all of it: `main.py`, `models.py`, rules, Twilio, the `/ai/*` route wrappers) | Every endpoint below returns real data; alerts and texts fire on their own |
+| **Minh Dau**: Backend + mobile app | `backend/` (all of it: `main.py`, `models.py`, rules, Twilio, push, the `/ai/*` route wrappers) and `app/` (Expo mobile app for patient, family, doctor: chat + push) | Every endpoint below returns real data; alerts and texts fire on their own |
 | **Minh Pham**: AI + Frontend | `ai/__init__.py`, `web/doctor/`, `web/cabinet/` | The 5 AI functions work alone; dashboard and cabinet screen run on the real API |
 | **Thanh**: Raspberry Pi code | `pi/` (code, backup sounds, Pi software setup) | Pi polls the backend, opens slots, sends photos/recordings, plays audio |
 | **Duy**: Hardware (joins later) | The physical cabinet: wiring, servos, camera mount, audio parts, box. No repo folder | Thanh's code runs on real parts instead of mock mode |
@@ -64,6 +67,17 @@ The Pi and the cabinet screen both poll. If they share one route, whoever reads 
 | `GET /audio/{file}.mp3` | Pi | MP3 the backend made with `speak()` |
 
 `open_slot` is optional: a command without it (e.g. `{"dose_id": 7, "say_url": null, "sound": "missed"}`) only plays audio. The same dose can arrive again as a repeat reminder. `sound` is one of `time_for_pill`, `good_job`, `already_took`, `missed`. If `say_url` fails to download, the Pi plays its stored file with that name.
+
+### Mobile app: chat + push (Minh Dau)
+
+| Route | Returns |
+|---|---|
+| `GET /doctors` | `[Doctor]` |
+| `GET /patients/{id}/messages?since=<iso>` | `[Message]` oldest first. One chat per patient: patient + family + doctor |
+| `POST /patients/{id}/messages` | body `{patient_id, sender: "patient"\|"family"\|"doctor", sender_name, text}` → `Message` with `id`, `at`; pushes to the other two roles |
+| `POST /push/register` | body `{role, user_id, token}` (Expo push token; `user_id` = patient id for patient/family, doctor id for doctor) |
+
+Every alert now goes to the app (dashboard + push to that role's phones) **and** by SMS. Pill time pushes to the patient's phone too.
 
 ### Demo controls (Minh Dau)
 
