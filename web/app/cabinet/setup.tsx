@@ -8,12 +8,9 @@ import { Glyph } from "./glyph";
 const IDLE_MS = 60_000; // "Switch patient" gives up and goes back if nobody types
 
 // One-time cabinet setup: a family member signs in with the patient's account, on a big
-// built-in keyboard (the Pi has none). Patient accounts only; the session is ended right
-// away because the cabinet's own routes need no login. On the Pi, `hw` is the patient the
-// hardware serves (PATIENT_ID in pi/.env) and only that account is accepted.
-export default function Setup({ hw, onDone, onCancel }: {
-  hw: number | null; onDone: (patientId: number) => void; onCancel?: () => void;
-}) {
+// built-in keyboard (the Pi has none). Any patient account; the session is ended right
+// away because the cabinet's own routes need no login.
+export default function Setup({ onDone, onCancel }: { onDone: (patientId: number) => void; onCancel?: () => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [field, setField] = useState<"email" | "password">("email");
@@ -21,14 +18,8 @@ export default function Setup({ hw, onDone, onCancel }: {
   const [show, setShow] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [hwName, setHwName] = useState("");
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (!hw) return;
-    api<{ name: string }>(`/cabinet/${hw}/today`).then((t) => setHwName(t.name)).catch(() => {});
-  }, [hw]);
 
   // switching: go back to the current patient if nobody types for a minute
   useEffect(() => {
@@ -63,8 +54,6 @@ export default function Setup({ hw, onDone, onCancel }: {
       api("/logout", { method: "POST", headers: { Authorization: `Bearer ${s.token}` } }).catch(() => {});
       if (s.user.role !== "patient") {
         setError(`That's a ${s.user.role} account. Sign in with the patient's own account.`);
-      } else if (hw && s.user.id !== hw) {
-        setError(`This cabinet's boxes are set up for ${hwName || "another patient"}. Sign in with that account.`);
       } else {
         return onDone(s.user.id);
       }
@@ -82,7 +71,7 @@ export default function Setup({ hw, onDone, onCancel }: {
         <div>
           <h1>{onCancel ? "Switch patient" : "Set up this cabinet"}</h1>
           {error ? <p className="cab-setup-error" role="alert">{error}</p>
-            : <p>Sign in with {hw && hwName ? `${hwName}'s` : "the patient's"} account. You only do this once.</p>}
+            : <p>Sign in with the patient&apos;s account. You only do this once.</p>}
         </div>
         {onCancel && <button type="button" className="cab-setup-cancel" onClick={onCancel}><Icon name="close" /> Cancel</button>}
       </div>

@@ -39,10 +39,8 @@ const MODE_ICON: Record<CabinetState["mode"], IconName> = {
 
 export default function Cabinet() {
   const [patientId, setPatientId] = useState<number | null>(null);
-  // Whose cabinet: ?patient=N in the URL wins (no sign-in); otherwise the patient signed in on
-  // this screen, saved here. ?hw=N (kiosk.sh) is the patient the Pi hardware serves: only they can sign in.
+  // Whose cabinet: ?patient=N in the URL wins (no sign-in); otherwise the patient signed in on this screen, saved here
   const [pinned, setPinned] = useState(false);
-  const [hw, setHw] = useState<number | null>(null);
   const [setup, setSetup] = useState<"first" | "switch" | null>(null);
   const [state, setState] = useState<CabinetState | null>(null);
   const [meds, setMeds] = useState<Medicine[]>([]);
@@ -65,13 +63,11 @@ export default function Cabinet() {
     const t = setTimeout(() => {
       const url = new URLSearchParams(location.search);
       const urlId = Number(url.get("patient")) || null;
-      const hwId = Number(url.get("hw")) || null;
       const saved = Number(loadPref("cab-patient", null, "")) || null;
-      setHw(hwId);
       if (urlId) {
         setPinned(true);
         setPatientId(urlId);
-      } else if (saved && (!hwId || saved === hwId)) {
+      } else if (saved) {
         setPatientId(saved);
       } else {
         setSetup("first");
@@ -235,7 +231,7 @@ export default function Cabinet() {
   if (setup) {
     return (
       <div className={cls}>
-        <Setup hw={hw} onDone={signedIn} onCancel={setup === "switch" ? cancelSetup : undefined} />
+        <Setup onDone={signedIn} onCancel={setup === "switch" ? cancelSetup : undefined} />
       </div>
     );
   }

@@ -3,8 +3,9 @@
 # Started at desktop login by ~/.config/autostart/cabinet-kiosk.desktop (pi/setup.sh).
 cd "$(dirname "$0")"
 [ -f .env ] && . ./.env
-# hw = the patient this Pi's boxes serve: the screen asks once for that patient's sign-in and remembers it
-SCREEN_URL=${SCREEN_URL:-http://192.168.137.1:3000/cabinet?hw=${PATIENT_ID:-1}}
+# the screen asks once for a patient's sign-in and remembers it (sign in as PATIENT_ID's patient,
+# the one this Pi's doors serve); SCREEN_URL=...cabinet?patient=N in pi/.env skips the sign-in
+SCREEN_URL=${SCREEN_URL:-http://192.168.137.1:3000/cabinet}
 ORIGIN=$(echo "$SCREEN_URL" | cut -d/ -f1-3)  # e.g. http://192.168.137.1:3000
 BROWSER=$(command -v chromium || command -v chromium-browser)
 PLATFORM=x11
