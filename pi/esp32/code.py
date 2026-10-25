@@ -35,8 +35,10 @@ HALL_PIN = pin.GPIO14  # Feather A4: DRV5032FALPG OUT; VCC=3V, GND=GND
 ENCODER_PINS = (pin.GPIO17, pin.GPIO16)  # Feather A1=CLK, A2=DT
 ENCODER_SW_PIN = pin.GPIO15  # Feather A3=SW; encoder +=3V, GND=GND
 ENCODER_DIRECTION = -1  # set to +1 instead if clockwise lowers volume on your encoder
-VOLUME_START = 0.2
-VOLUME_STEP = 0.025
+# 16 clicks from silent to full, on a loudness curve (level = (step/16)^2): ears hear loudness roughly
+# logarithmically, so equal steps of 0.025 were inaudible near the top and the knob seemed dead.
+VOLUME_STEPS = 16
+VOLUME_START_STEP = 7  # (7/16)^2 = 0.19, about the old 0.2 start
 VOLUME_MAX = 1.0  # full DIGITAL range; not a safe-wattage limiter for the 0.5 W speaker!
 RATE = 16000
 CHUNK = 512  # samples per mic read (32 ms)
@@ -51,9 +53,13 @@ link.write_timeout = 0
 
 mixer = audiomixer.Mixer(voice_count=1, buffer_size=4096, sample_rate=RATE, channel_count=1,
                          bits_per_sample=16, samples_signed=True)
-mixer.voice[0].level = VOLUME_START
+mixer.voice[0].level = (VOLUME_START_STEP / VOLUME_STEPS) ** 2 * VOLUME_MAX
 speaker = audiobusio.I2SOut(*AMP)
 speaker.play(mixer)  # the mixer plays silence between sounds
+
+# a short tick at the new volume after each knob click (only when nothing else is playing)
+_tick = array.array("h", [int(9000 * (1 - i / 1200) * (1 if (i // 10) % 2 else -1)) for i in range(1200)])
+TICK = audiocore.RawSample(_tick, sample_rate=RATE)  # 75 ms, 800 Hz square, fading out
 
 
 class StableInput:
@@ -84,8 +90,10 @@ class Panel:
         self.hall = hall
         self.voice = voice
         self.position = encoder.position
-        self.volume = VOLUME_START
+        self.step = VOLUME_START_STEP
+        self.volume = self.level(self.step)
         self.muted = False
+        self.tick_due = None  # when to play the tick (after the knob stops for a moment)
         self.hall_input = StableInput(hall.value, now, 0.10) if hall is not None else None
         self.switch_input = StableInput(switch.value, now, 0.04)
         self.opens = 0
@@ -96,6 +104,10 @@ class Panel:
         self.last_audio_error = None
         self.apply_volume()
 
+    @staticmethod
+    def level(step):
+        return round((step / VOLUME_STEPS) ** 2 * VOLUME_MAX, 4)
+
     def apply_volume(self):
         self.voice.level = 0.0 if self.muted else self.volume
 
@@ -103,8 +115,15 @@ class Panel:
         # Reject NaN/inf, which can otherwise make mixer.level fail after changing state.
         if not -1e10 < value < 1e10:
             raise ValueError("volume must be finite")
-        self.volume = round(max(0.0, min(VOLUME_MAX, value)), 4)
+        value = max(0.0, min(VOLUME_MAX, value))
+        self.step = round((value / VOLUME_MAX) ** 0.5 * VOLUME_STEPS)  # nearest knob step
+        self.volume = round(value, 4)
         self.apply_volume()
+
+    def tick(self):
+        """Let the patient hear the new volume, but never cut into a reminder or an answer."""
+        if not self.muted and not self.voice.playing:
+            self.voice.play(TICK)
 
     def update(self, now):
         position = self.encoder.position
@@ -113,7 +132,13 @@ class Panel:
         if delta:
             self.last_rotation = now
             self.press_rotated = True
-            self.set_volume(self.volume + delta * ENCODER_DIRECTION * VOLUME_STEP)
+            self.step = max(0, min(VOLUME_STEPS, self.step + delta * ENCODER_DIRECTION))
+            self.volume = self.level(self.step)
+            self.apply_volume()
+            self.tick_due = now + 0.12  # one tick when the turning pauses, not one per click
+        if self.tick_due is not None and now >= self.tick_due:
+            self.tick_due = None
+            self.tick()
 
         # A clean press/release toggles mute. Rotation cancels a press, preventing the
         # encoder's noisy SW contact from creating false presses while spinning fast.
@@ -122,11 +147,14 @@ class Panel:
                 self.press_started = now
                 self.press_rotated = now - self.last_rotation < 0.15
             else:
+                # forgiving: any press from 50 ms to 3 s that isn't part of a turn
                 if (self.press_started is not None and not self.press_rotated
-                        and 0.08 <= now - self.press_started <= 2.0
+                        and 0.05 <= now - self.press_started <= 3.0
                         and now - self.last_rotation >= 0.15):
                     self.muted = not self.muted
                     self.apply_volume()
+                    if not self.muted:
+                        self.tick()  # unmuted: you hear it
                 self.press_started = None
 
         if self.hall_input is not None and self.hall_input.update(self.hall.value, now):
@@ -141,7 +169,7 @@ class Panel:
                 "hall_closed": not self.hall_input.value if enabled else None,
                 "hall_opens": self.opens if enabled else None,
                 "hall_closes": self.closes if enabled else None,
-                "volume": self.volume, "muted": self.muted,
+                "volume": self.volume, "volume_step": self.step, "muted": self.muted,
                 "output_level": self.voice.level, "last_audio_error": self.last_audio_error}
 
 
