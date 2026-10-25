@@ -32,6 +32,12 @@ export type Alert = {
   patient_id: number; message: string; at: string;
 };
 
+// One appointment time (GET /schedule). patient_id null = open for booking.
+export type Appointment = {
+  id: number; doctor_id: number; doctor_name: string; starts_at: string; minutes: number;
+  patient_id: number | null; patient_name: string | null; booked_by: number | null; reason: string | null;
+};
+
 export type CabinetState = {
   mode: "idle" | "take" | "taken" | "already_took" | "missed";
   dose_id: number | null; slot: number | null; medicine: string | null;

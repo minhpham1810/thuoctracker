@@ -14,8 +14,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${heading.variable} ${body.variable} ${ui.variable}`}>
-      <body>{children}</body>
+    // suppressHydrationWarning: browser extensions (e.g. custom cursors) add attributes to <html> and <body>
+    // before React loads. It only covers these two tags' own attributes, not the page inside.
+    <html lang="en" className={`${heading.variable} ${body.variable} ${ui.variable}`} suppressHydrationWarning>
+      <body suppressHydrationWarning>{children}</body>
     </html>
   );
 }

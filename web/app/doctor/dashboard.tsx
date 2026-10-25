@@ -5,12 +5,13 @@ import { Icon, Logo, type IconName } from "@/components/icon";
 import {
   api, clock, daysUntil, fmtDate, fmtDateTime, fmtTime, initials, LONG_SLOT, onUnauthorized, pillColor, setToken, SLOTS,
   todayItems, ymdOf,
-  type Alert, type Contact, type DoseLog, type Family, type Medicine, type Patient, type Session, type TodayItem,
+  type Alert, type Appointment, type Contact, type DoseLog, type Family, type Medicine, type Patient, type Session, type TodayItem,
   type User,
 } from "@/lib/api";
 import AddMedicine from "./add-medicine";
 import CameraTest from "./camera-test";
 import Messages from "./chat";
+import Schedule, { isoMinute, visitLabel } from "./schedule";
 
 const SAVED = "thuoc-doctor-session"; // localStorage key: stay logged in across reloads
 const POLL_MS = 3000;
@@ -34,6 +35,7 @@ type Data = {
   alerts: AlertGroup[];
   meds: Record<number, Medicine[]>;
   doses: Record<number, DoseLog[]>;
+  slots: Appointment[]; // the doctor's appointment times, open and booked
 };
 
 // Browsers only allow popups on https or localhost, so the hotspot IP gets "unsupported".
@@ -145,7 +147,7 @@ function DoctorView({ doctor, onLogout }: { doctor: User; onLogout: () => void }
   const [online, setOnline] = useState(true);
   const [selected, setSelected] = useState<number | null>(null);
   const [editing, setEditing] = useState<Medicine | number | null>(null); // number: a new medicine for that box
-  const [tab, setTab] = useState<"alerts" | "messages">("alerts");
+  const [tab, setTab] = useState<"alerts" | "messages" | "schedule">("alerts");
   const [chatWith, setChatWith] = useState<number | null>(null);
   const [newAlerts, setNewAlerts] = useState<Set<number>>(new Set());
   const [confirmReset, setConfirmReset] = useState(false);
@@ -155,7 +157,9 @@ function DoctorView({ doctor, onLogout }: { doctor: User; onLogout: () => void }
   // shortcut: refetches everything every 3 s; fine for a few demo patients, use /alerts?since= at scale
   const load = useCallback(async () => {
     try {
-      const [contacts, alerts] = await Promise.all([api<Contact[]>("/contacts"), api<Alert[]>("/alerts")]);
+      const [contacts, alerts, slots] = await Promise.all([
+        api<Contact[]>("/contacts"), api<Alert[]>("/alerts"), api<Appointment[]>("/schedule"),
+      ]);
       const now = new Date();
       const all = contacts.map((c) => c.user).filter((u): u is Patient => u.role === "patient");
       const per = await Promise.all(all.map((p) => Promise.all([
@@ -178,7 +182,7 @@ function DoctorView({ doctor, onLogout }: { doctor: User; onLogout: () => void }
         }
       }
       setData({
-        now, contacts, patients, triage, meds, doses,
+        now, contacts, patients, triage, meds, doses, slots,
         alerts: groupAlerts([...alerts].sort((a, b) => b.at.localeCompare(a.at))),
       });
       // open the most urgent patient first, then stay on whoever the doctor picked
@@ -295,6 +299,7 @@ function DoctorView({ doctor, onLogout }: { doctor: User; onLogout: () => void }
             <PatientView key={patient.id} patient={patient} now={data.now}
               meds={data.meds[patient.id] ?? []} doses={data.doses[patient.id] ?? []}
               family={data.contacts.map((c) => c.user).filter((u): u is Family => u.role === "family" && u.patient_id === patient.id)}
+              visit={data.slots.find((x) => x.patient_id === patient.id && x.starts_at >= isoMinute(data.now))}
               onEdit={setEditing} onChange={load} onMessage={message} />
           ) : (
             <p className="empty">{data ? "Pick a patient on the left." : "Loading…"}</p>
@@ -309,9 +314,15 @@ function DoctorView({ doctor, onLogout }: { doctor: User; onLogout: () => void }
             <button type="button" role="tab" aria-selected={tab === "messages"} onClick={() => setTab("messages")}>
               <Icon name="message" /> Messages{unread > 0 && <span className="count" aria-label={`${unread} unread`}>{unread}</span>}
             </button>
+            <button type="button" role="tab" aria-selected={tab === "schedule"} onClick={() => setTab("schedule")}>
+              <Icon name="calendar" /> Schedule
+            </button>
           </div>
           {tab === "messages" ? (
             <Messages me={doctor} contacts={data?.contacts ?? []} withId={chatWith} onOpen={setChatWith} onChange={load} />
+          ) : tab === "schedule" ? (
+            data ? <Schedule slots={data.slots} now={data.now} onOpen={setSelected} onChange={load} />
+              : <p className="empty">Loading the schedule…</p>
           ) : data ? (
             <AlertList groups={data.alerts} now={data.now} patients={data.patients} fresh={newAlerts}
               onOpen={setSelected} />
@@ -368,8 +379,8 @@ function AlertList({ groups, now, patients, fresh, onOpen }: {
   );
 }
 
-function PatientView({ patient, now, meds, doses, family, onEdit, onChange, onMessage }: {
-  patient: Patient; now: Date; meds: Medicine[]; doses: DoseLog[]; family: Family[];
+function PatientView({ patient, now, meds, doses, family, visit, onEdit, onChange, onMessage }: {
+  patient: Patient; now: Date; meds: Medicine[]; doses: DoseLog[]; family: Family[]; visit?: Appointment;
   onEdit: (m: Medicine | number) => void; onChange: () => void; onMessage: (userId: number) => void;
 }) {
   const [busy, setBusy] = useState<number | null>(null);
@@ -396,6 +407,11 @@ function PatientView({ patient, now, meds, doses, family, onEdit, onChange, onMe
           <p className="facts">
             <span>{patient.age} years old</span>
             <span>{patient.email}</span>
+            {visit && (
+              <span className="next-visit">
+                <Icon name="calendar" /> Next visit {visitLabel(visit, now)}{visit.reason ? `: ${visit.reason}` : ""}
+              </span>
+            )}
             <a href={`/cabinet?patient=${patient.id}`} target="_blank" rel="noreferrer">
               Cabinet screen <Icon name="external" /><span className="sr"> (opens in a new tab)</span>
             </a>
