@@ -62,7 +62,8 @@ export default function App() {
   if (other) {
     const chat = <Chat user={user} other={other} />;
     body = user.role === 'doctor' && patientId
-      ? <Switcher tabs={{ Chat: chat, Today: <PatientView user={user} patientId={patientId} /> }} />
+      // Today first: the doctor opens a patient to check doses or add a medicine; Chat is one tap away
+      ? <Switcher tabs={{ Today: <PatientView user={user} patientId={patientId} />, Chat: chat }} />
       : chat;
   } else if (user) {
     const people = <People user={user} onOpen={setOther} />;

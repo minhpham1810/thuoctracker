@@ -9,7 +9,7 @@ import { Button, Card, colors, Dot, Pill, statusColor, Title } from './ui';
 export default function PatientView({ user, patientId }) {
   const [tick, setTick] = useState(0); // bump to refetch right after "I took it"
   const [saving, setSaving] = useState(false);
-  const [adding, setAdding] = useState(false); // scan-a-label form open
+  const [adding, setAdding] = useState(null); // null, 'scan' (camera opens right away) or 'manual'
   const [data, error] = usePoll(async () => {
     const [meds, doses, alerts, cabinet] = await Promise.all([
       api.medicines(patientId), api.doses(patientId), api.alerts(), api.cabinetState(patientId)]);
@@ -18,8 +18,8 @@ export default function PatientView({ user, patientId }) {
 
   if (!data) return <Text style={s.loading}>{error ? `Can't reach the backend (${error})` : 'Loading…'}</Text>;
   if (adding) {
-    return <AddMedicine patientId={patientId} meds={data.meds}
-                        onDone={(saved) => { setAdding(false); if (saved) setTick((x) => x + 1); }} />;
+    return <AddMedicine patientId={patientId} meds={data.meds} autoScan={adding === 'scan'}
+                        onDone={(saved) => { setAdding(null); if (saved) setTick((x) => x + 1); }} />;
   }
   const medName = Object.fromEntries(data.meds.map((m) => [m.id, m]));
   const big = user.role === 'patient';
@@ -49,7 +49,10 @@ export default function PatientView({ user, patientId }) {
 
       <Title>Medicines</Title>
       {(user.role === 'doctor' || user.role === 'family') && (
-        <Button title="📷  Scan a label to add a medicine" kind="ghost" onPress={() => setAdding(true)} />
+        <View style={s.addRow}>
+          <View style={{ flex: 1 }}><Button title="📷  Scan a label" onPress={() => setAdding('scan')} /></View>
+          <View style={{ flex: 1 }}><Button title="✏️  Add by hand" kind="ghost" onPress={() => setAdding('manual')} /></View>
+        </View>
       )}
       {data.meds.map((m) => (
         <Card key={m.id} style={s.row}>
@@ -99,6 +102,7 @@ export default function PatientView({ user, patientId }) {
 const s = StyleSheet.create({
   loading: { textAlign: 'center', marginTop: 40, color: colors.muted },
   row: { flexDirection: 'row', alignItems: 'center' },
+  addRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
   name: { fontSize: 17, fontWeight: '700', color: colors.text },
   muted: { color: colors.muted, fontSize: 13 },
   left: { fontSize: 16, fontWeight: '700', color: colors.text },

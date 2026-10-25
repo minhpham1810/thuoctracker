@@ -1,5 +1,5 @@
 import { requireOptionalNativeModule } from 'expo';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { api } from './api';
 import { Button, Card, colors, Dot, Title } from './ui';
@@ -15,7 +15,7 @@ const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
 
 // Scan a bottle label with the phone; Gemini fills in the form; a person checks every field and saves.
-export default function AddMedicine({ patientId, meds, onDone }) {
+export default function AddMedicine({ patientId, meds, autoScan, onDone }) {
   const free = SLOTS.filter((n) => !meds.some((m) => m.slot === n));
   const [photo, setPhoto] = useState(null);
   const [reading, setReading] = useState(false);
@@ -25,6 +25,7 @@ export default function AddMedicine({ patientId, meds, onDone }) {
     name: '', dose: '1 pill', times: '08:00', expiration: '', pills_left: '30', slot: free[0] ?? null, color: 'white',
   });
   const set = (k) => (v) => setF((x) => ({ ...x, [k]: v }));
+  useEffect(() => { if (autoScan) scan(true); }, []); // "Scan a label": straight to the camera
 
   const scan = async (camera) => {
     setError(null);
@@ -96,7 +97,7 @@ export default function AddMedicine({ patientId, meds, onDone }) {
       </View>
 
       <Card>
-        <Text style={s.muted}>Take a photo of the bottle label. We fill in the form; check every field before saving.</Text>
+        <Text style={s.muted}>Scan the bottle label to fill in the form, or type it in below. Check every field before saving.</Text>
         <Button title={reading ? 'Reading the label…' : '📷  Scan label with camera'} big onPress={() => !reading && scan(true)} />
         <Button title="Choose a photo" kind="ghost" onPress={() => !reading && scan(false)} />
         {photo && <Image source={{ uri: photo }} style={s.photo} resizeMode="contain" />}
