@@ -23,9 +23,9 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 # Gemma 4 E4B hears and answers a question in ~0.5 s on an M5 Pro. 12b-mlx answers a bit better, but in
 # Ollama 0.33.3 it mostly replied "I cannot hear any audio" (tested 2026-10-24).
 OLLAMA_MODEL = "gemma4:e4b-mlx"
-# label reading: first installed match wins. qwen2.5vl reads small print best and runs on Windows and Mac
-# (`ollama pull qwen2.5vl:7b`); gemma4 is what the Mac already has for voice.
-VISION_MODELS = ("qwen2.5vl", "gemma4", "llama3.2-vision", "minicpm-v", "llava")
+# label reading: first installed match wins. gemma4 first: the Mac already has gemma4:e4b-mlx for voice, so labels
+# reuse the loaded model (MLX runs only on Apple Silicon; Windows pulls the regular gemma4:e4b).
+VISION_MODELS = ("gemma4", "qwen2.5vl", "llama3.2-vision", "minicpm-v", "llava")
 VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")  # "Rachel", a calm default voice
 DONT_KNOW = "I don't know, please ask your doctor."
 DIDNT_HEAR = "Sorry, I didn't hear a question. Please try again."
@@ -95,7 +95,7 @@ def _vision_model() -> str:
         for name in installed:
             if name.startswith(family):
                 return name
-    raise RuntimeError(f"no vision model in Ollama ({installed}); run: ollama pull qwen2.5vl:7b")
+    raise RuntimeError(f"no vision model in Ollama ({installed}); run: ollama pull gemma4:e4b")
 
 
 def _shrink(image: bytes, longest: int = 1280) -> bytes:

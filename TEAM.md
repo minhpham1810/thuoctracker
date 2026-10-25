@@ -4,6 +4,10 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 21:45 Minh Dau (ai): **Label scanning now prefers Gemma 4** (order: gemma4, qwen2.5vl, llama3.2-vision, minicpm-v, llava). This replaces the setup steps in the 21:30 line below.
+  - **Minh Pham (Mac):** nothing to pull. The `gemma4:e4b-mlx` you have for voice reads labels too, and the model is already loaded.
+  - **Thanh (Windows):** `ollama pull gemma4:e4b` (the regular build, ~6.6 GB). The `-mlx` versions run only on Apple Silicon. Then `git pull`, `.venv\Scripts\pip install -r backend\requirements.txt`, and restart the backend.
+
 - 21:30 Minh Dau (ai + backend): **Label scanning runs on local Ollama, on Windows or Mac.** `ai.read_label` sends the photo to a local vision model first and falls back to Gemini on a laptop without Ollama. Same output as before (`{name, dose, times, expiration, quantity}`), so the phone app and dashboard autofill are unchanged.
   - **Thanh (Windows) and Minh Pham (Mac):** install Ollama, run `ollama pull qwen2.5vl:7b` once (~6 GB), then `git pull`, `.venv\Scripts\pip install -r backend\requirements.txt` (adds Pillow), and restart the backend. It picks the first installed of `qwen2.5vl`, `gemma4`, `llama3.2-vision`, `minicpm-v`, `llava`, or `OLLAMA_VISION_MODEL` in `.env`. On the Mac, the `gemma4:e4b-mlx` already there for voice is the backup if qwen isn't pulled.
   - Photos are shrunk to 1280 px first. Local models answer loosely, so the result is cleaned (`8:00` → `08:00`, bad dates and times dropped, `"60 tablets"` → `60`) and anything unreadable stays empty for a person to fill in, never made up.
