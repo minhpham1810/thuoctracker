@@ -7,6 +7,7 @@ Mock:  MOCK=1 python pi/main.py                  every part faked (runs on a lap
 Audio: AUDIO=esp32 plays and records through the ESP32-S3 audio unit on USB (pi/esp32/)
 Bench: python pi/main.py servo 2   |   python pi/main.py snap   |   python pi/main.py esp32 ping
 """
+import array
 import glob
 import os
 import shutil
@@ -153,9 +154,9 @@ class Esp32:
         """One of the sounds stored on the ESP32 (/sounds/NAME.wav)."""
         self._call(f"play {name}")
 
-    def say(self, wav: bytes):
-        """Send a 16 kHz mono WAV; the ESP32 saves it and plays it."""
-        self._call(f"say {len(wav)}", wav, timeout=30 + len(wav) / RATE)
+    def say(self, pcm: bytes):
+        """Send raw 16 kHz, 16-bit, mono audio; the ESP32 keeps it in RAM and plays it."""
+        self._call(f"audio {len(pcm)}", pcm, timeout=30 + len(pcm) / (2 * RATE))
 
     def record(self, seconds: float) -> bytes:
         """Raw 16 kHz, 16-bit, mono samples from the INMP441."""
@@ -208,13 +209,10 @@ def _with_esp32(fn):
         raise
 
 
-def _to_wav(mp3_path: str) -> bytes:
-    """MP3 -> the ESP32's format (16 kHz, 16-bit, mono WAV)."""
-    out = os.path.join(tempfile.gettempdir(), "say.wav")
-    subprocess.run([_mpg123(), "-q", "-m", "-r", str(RATE), "-e", "s16", "-w", out, mp3_path],
-                   check=True, timeout=60)
-    with open(out, "rb") as f:
-        return f.read()
+def _to_pcm(mp3_path: str) -> bytes:
+    """MP3 -> the ESP32's format: raw 16 kHz, 16-bit, mono samples (mpg123 -s writes them to stdout)."""
+    return subprocess.run([_mpg123(), "-q", "-m", "-r", str(RATE), "-e", "s16", "-s", mp3_path],
+                          capture_output=True, check=True, timeout=60).stdout
 
 
 def _mpg123() -> str:
@@ -229,8 +227,8 @@ def _play(path: str):
         print(f"[mock] play {os.path.basename(path)}")
         return
     if AUDIO == "esp32":
-        wav = _to_wav(path)
-        _with_esp32(lambda esp: esp.say(wav))
+        pcm = _to_pcm(path)
+        _with_esp32(lambda esp: esp.say(pcm))
         return
     subprocess.run([_mpg123(), "-q", path], check=True, timeout=60)
 
@@ -252,7 +250,7 @@ def record_question(seconds: int = ASK_SECONDS) -> str:
         print(f"[mock] record {seconds} s")
         pcm = bytes(2 * RATE * seconds)  # silence
     elif AUDIO == "esp32":
-        pcm = _with_esp32(lambda esp: esp.record(seconds))
+        pcm = _louder(_with_esp32(lambda esp: esp.record(seconds)))
     else:
         raise NotImplementedError("the mic is on the ESP32: set AUDIO=esp32")
     path = os.path.join(tempfile.gettempdir(), "question.wav")  # /tmp on the Pi
@@ -264,8 +262,25 @@ def record_question(seconds: int = ASK_SECONDS) -> str:
     return path
 
 
+def _louder(pcm: bytes) -> bytes:
+    """Print how loud the recording is and raise a quiet one (up to 20x) so the model can hear it."""
+    samples = array.array("h")
+    samples.frombytes(pcm)
+    if not samples:
+        return pcm
+    peak = max(max(samples), -min(samples))
+    rms = (sum(s * s for s in samples) / len(samples)) ** 0.5
+    gain = min(20.0, 0.7 * 32767 / peak) if peak else 1.0
+    note = " (very quiet: speak close to the mic, and check its wiring)" if peak < 300 else ""
+    print(f"[mic] peak {peak}, average {rms:.0f} of 32767{note}" + (f"; raised {gain:.1f}x" if gain > 1.2 else ""))
+    if gain <= 1.2:
+        return pcm
+    return array.array("h", (max(-32768, min(32767, int(s * gain))) for s in samples)).tobytes()
+
+
 def ask_question():
     """Talk button: record a question, the backend answers it from the dose log, play the answer."""
+    print(f"[ask] listening for {ASK_SECONDS} s: speak now")
     with open(record_question(), "rb") as f:
         r = requests.post(f"{BACKEND}/ai/ask", params={"patient_id": PATIENT_ID},
                           files={"audio": ("question.wav", f, "audio/wav")}, timeout=60)

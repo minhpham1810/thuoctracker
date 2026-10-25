@@ -4,10 +4,11 @@
 #   ping                  -> pong
 #   vol 0.3               speaker volume 0-1                    -> ok
 #   play NAME             plays /sounds/NAME.wav                -> ok | err ...
-#   say N  + N bytes      a WAV file: saved to /say.wav, played -> ok | err ...
-#   rec SECONDS           records the mic -> pcm N + N bytes (16 kHz, 16-bit, mono) | err ...
+#   audio N  + N bytes    raw audio, kept in RAM and played     -> ok | err ...
+#   rec SECONDS           records the mic -> pcm N + N bytes | err ...
 # Sent on its own: "ready" after starting, "btn" when the talk button is pressed (if wired).
-# Every WAV is 16000 Hz, mono, 16-bit; the Pi converts its MP3s before sending.
+# All audio is 16000 Hz, mono, 16-bit (raw audio: little-endian samples, no header); the Pi
+# converts its MP3s before sending.
 import array
 import time
 
@@ -74,30 +75,40 @@ def play_file(path):
             wav.deinit()
 
 
-def receive(path, size):
-    """Read exactly `size` bytes from the Pi into `path`. Always reads them all, even if
-    the file can't be written, so the next command still lines up."""
+def drain(size):
+    """Read and drop `size` bytes, so the next command still lines up after a failure."""
     buf = bytearray(2048)
-    left = size
     deadline = time.monotonic() + 10 + size / 20000
+    while size and time.monotonic() < deadline:
+        size -= link.readinto(memoryview(buf)[:min(size, len(buf))]) or 0
+
+
+def play_pcm(size):
+    """Receive `size` bytes of raw audio into RAM (the Feather's PSRAM) and play it. RAM, not
+    flash: writing an answer to flash was slow enough to time out."""
+    if size % 2:
+        drain(size)
+        raise ValueError("audio must be whole 16-bit samples")
     try:
-        f = open(path, "wb")
-    except OSError:
-        f = None  # read-only: boot.py didn't remount (BOOT button held at power-on)
+        samples = array.array("h", bytes(size // 2))  # size // 2 silent samples
+    except MemoryError:
+        drain(size)
+        raise
+    link.timeout = 10 + size / 20000  # one read for the whole answer: always whole samples
     try:
-        while left:
-            if time.monotonic() > deadline:
-                raise OSError("timed out receiving audio")
-            got = link.readinto(memoryview(buf)[:min(left, len(buf))])
-            if got:
-                if f:
-                    f.write(memoryview(buf)[:got])
-                left -= got
+        got = link.readinto(samples) or 0
     finally:
-        if f:
-            f.close()
-    if not f:
-        raise OSError("drive is read-only, can't save the answer")
+        link.timeout = 0.05
+    if got != size:
+        raise OSError("got %d of %d audio bytes" % (got, size))
+    sound = audiocore.RawSample(samples, sample_rate=RATE)
+    try:
+        mixer.voice[0].play(sound)
+        while mixer.voice[0].playing:
+            time.sleep(0.01)
+        time.sleep(0.2)  # let the buffered tail reach the speaker
+    finally:
+        sound.deinit()
 
 
 def record(seconds):
@@ -140,9 +151,8 @@ def run(line):
             raise ValueError("bad sound name")
         play_file("/sounds/%s.wav" % arg)
         send("ok")
-    elif word == "say":
-        receive("/say.wav", int(arg))
-        play_file("/say.wav")
+    elif word == "audio":
+        play_pcm(int(arg))
         send("ok")
     elif word == "rec":
         record(float(arg))  # replies with pcm N + the audio
