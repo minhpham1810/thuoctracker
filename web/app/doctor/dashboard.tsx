@@ -10,6 +10,7 @@ import {
 } from "@/lib/api";
 import AddMedicine from "./add-medicine";
 import CameraTest from "./camera-test";
+import { DisplayMenu, useDisplay, type Display } from "./display";
 import DrugLabels from "./drug-labels";
 import Messages from "./chat";
 import Schedule, { isoMinute, visitLabel } from "./schedule";
@@ -50,6 +51,7 @@ const ALERT_ICON: Record<Alert["type"], IconName> = { missed: "x", low_pills: "p
 
 export default function Dashboard() {
   const [session, setSession] = useState<Session | null | undefined>(undefined); // undefined: not read yet
+  const display = useDisplay();
   const save = useCallback((s: Session | null) => {
     try { localStorage.setItem(SAVED, JSON.stringify(s)); } catch {}
     setToken(s?.token ?? null);
@@ -65,13 +67,19 @@ export default function Dashboard() {
     return () => { clearTimeout(t); onUnauthorized(null); };
   }, [save]);
 
-  if (session === undefined) return <div className="dash" />;
-  if (!session) return <div className="dash"><Login onLogin={save} /></div>;
+  // theme and text size wrap the login screen too
+  const shell = (children?: React.ReactNode) => (
+    <div className={`dash${display.dark ? " dark" : ""}`} style={{ "--fs": display.scale } as React.CSSProperties}>
+      {children}
+    </div>
+  );
+  if (session === undefined) return shell();
+  if (!session) return shell(<Login onLogin={save} />);
   async function logout() {
     await api("/logout", { method: "POST" }).catch(() => {});
     save(null);
   }
-  return <div className="dash"><DoctorView doctor={session.user} onLogout={logout} /></div>;
+  return shell(<DoctorView doctor={session.user} onLogout={logout} display={display} />);
 }
 
 const json = (body: unknown): RequestInit => ({
@@ -143,7 +151,7 @@ function Login({ onLogin }: { onLogin: (s: Session) => void }) {
   );
 }
 
-function DoctorView({ doctor, onLogout }: { doctor: User; onLogout: () => void }) {
+function DoctorView({ doctor, onLogout, display }: { doctor: User; onLogout: () => void; display: Display }) {
   const [data, setData] = useState<Data | null>(null);
   const [online, setOnline] = useState(true);
   const [selected, setSelected] = useState<number | null>(null);
@@ -254,6 +262,7 @@ function DoctorView({ doctor, onLogout }: { doctor: User; onLogout: () => void }
             title="Reload the sample patients for everyone using this database">
             {confirmReset ? "Click again to reset" : "Reset demo"}
           </button>
+          <DisplayMenu display={display} />
           <span className="me"><span className="avatar sm" aria-hidden="true">{initials(doctor.name)}</span>{doctor.name}</span>
           <button className="btn btn-quiet btn-sm" type="button" onClick={onLogout}><Icon name="logout" /> Log out</button>
         </div>

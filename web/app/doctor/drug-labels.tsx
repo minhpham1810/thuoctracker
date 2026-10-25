@@ -171,7 +171,7 @@ function Interactions({ patientId, meds }: { patientId: number; meds: Medicine[]
               : meds.length < 2 && !added ? <>Interactions need two or more medicines. Check a drug you&apos;re considering above.</>
               : found.length ? <><b>{plural(found.length, "combination")} to review</b>{counts.length > 0 && (
                   <span className="counts">
-                    {counts.map(([t, n]) => <span key={t} className={`count tier-${t}`}>{n} {TIER[t].badge.toLowerCase()}</span>)}
+                    {counts.map(([t, n]) => <span key={t} className={`tier-count tier-${t}`}>{n} {TIER[t].badge.toLowerCase()}</span>)}
                   </span>)}</>
               : <>Nothing in the labels links these medicines with each other.</>}
           </p>
