@@ -50,6 +50,7 @@ Nothing talks directly to anything else. The cabinet, screens, phones and AI all
 | Touchscreen + dashboard (`web/`) | backend via Next.js `/api/*` proxy | polls `/cabinet/{id}/state` every 1 s, dashboard polls every 3 s |
 | Mobile app (`app/`) | backend :8000 directly | polls status, alerts and chat; registers for push |
 | Backend (`backend/`) | Gemini, ElevenLabs (through `ai/`), Expo push | the only part that decides anything |
+| Auth0 login (optional) | dashboard and app → Auth0, then backend → Auth0 `/userinfo` | `POST /login/auth0` trades the Auth0 login for the usual backend session |
 
 ### Main flows
 
@@ -126,6 +127,18 @@ cd app && npx expo start          # or: npx expo start --tunnel   if the phone c
 Install **Expo Go** on the phone, scan the QR code (iPhone: Camera app; Android: inside Expo Go). On the login screen check the server (`http://<laptop-ip>:8000`) and log in: `lan@demo.com` (patient), `minh@demo.com` (family) or `doctor@demo.com` (doctor), password `demo1234`. New people tap **Create an account**, in this order: doctor, then patient (enters the doctor's email), then family (enters the patient's email). The app stays logged in. On a computer, `npx expo start --web` runs the same app in the browser; the doctor's full workspace is the dashboard at `:3000/doctor` (same login). Check the phone can reach the backend by opening `http://<laptop-ip>:8000/health` in its browser. Allow Python and Node through Windows Firewall when asked.
 
 Notifications: in Expo Go they show while the app is running. Real push needs `npx eas init` in `app/` (Expo account), and on Android a development build (`npx eas build --profile development --platform android`).
+
+**Auth0 login (optional)**
+
+Email + password keeps working everywhere. Auth0 adds a **Continue with Auth0** button (tenant `dev-igr7vxhgin21kqfz.us.auth0.com`).
+
+- **Backend:** `AUTH0_DOMAIN` in `.env` (see `.env.example`). Without it, `POST /login/auth0` answers 503 and nothing else changes.
+- **Dashboard:** needs `web/.env.local` with the "ThuocTracker Doctor Dashboard" app's keys (`APP_BASE_URL`, `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`, `AUTH0_SECRET`), from the [Auth0 dashboard](https://manage.auth0.com/dashboard/us/dev-igr7vxhgin21kqfz/applications/aOI4mzS4jSqhf2IPqFGiS3jJXRxJxZuW/settings). It works only at `http://localhost:3000/doctor` (the callback Auth0 allows). A new email gets a doctor account.
+- **App:** the button appears only in a development build made after Auth0 was added, not in Expo Go or older APKs. It logs into existing accounts only (new people tap **Create an account** first). Run `npx expo start` without `--go` and open the ThuocTracker app.
+  - Android: `cd app && npx eas build --profile development --platform android`, then install the new APK.
+  - iPhone with a free Apple ID: plug it in, `cd app && npx expo run:ios --device`, then on the phone **Settings → General → VPN & Device Management → Trust** your Apple ID. Free builds stop opening after 7 days (run it again). iOS push is off (`enableRemoteNotifications: false` in `app/app.json`) because free accounts can't sign it; turn it back on with a paid Apple Developer account.
+- An email that already has an account must be verified in Auth0, so the `@demo.com` demo accounts can't use Auth0: log in with their password.
+- Test the account rules without Auth0: `.venv/bin/python -m backend.test_auth0`.
 
 On the Pi: `pip install -r pi/requirements.txt`, then `BACKEND_URL=http://<laptop-ip>:8000 python pi/main.py`.
 Use a 2.4 GHz phone hotspot for the laptop and the Pi, not campus WiFi.
