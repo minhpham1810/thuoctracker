@@ -106,6 +106,28 @@ assert [ai._clock(datetime(2026, 1, 1, h, m)) for h, m in [(0, 30), (4, 0), (12,
 with mock.patch("ai.requests.post", return_value=ollama("You took Aspirin at 8 in the afternoon. " + ai.DONT_KNOW)):
     assert ai.answer("Should I take another aspirin?", log) == ai.DONT_KNOW  # nothing extra rides on a refusal
 
+# with the cabinet's medicines: today's doses and the next pill are worked out here, and a pill time from
+# the schedule counts as grounded (8 in the evening isn't in the log yet)
+class OnePm(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return datetime.combine(today, datetime.min.time()).replace(hour=13)
+
+
+meds = [{"name": "Aspirin", "color": "blue", "dose": "1 pill", "times": ["08:00", "20:00"], "slot": 1,
+         "pills_left": 10, "expiration": "2027-01-23"}]
+next_pill = "Your next pill is Aspirin (blue pill) at 8 in the evening today."
+with mock.patch("ai.datetime", OnePm), mock.patch("ai.requests.post", return_value=ollama(next_pill)) as p:
+    assert ai.answer("When is my next pill?", log, meds) == next_pill
+    user = p.call_args.kwargs["json"]["messages"][1]["content"]
+    assert ("- 8 in the morning: Aspirin (blue pill), taken at 8:03 in the morning\n"
+            "- 8 in the evening: Aspirin (blue pill), still to come\n"
+            "Next pill: Aspirin (blue pill) at 8 in the evening today.") in user, user
+    assert "box 1, 10 pills left, expires January 23, 2027" in user, user
+# people talking nearby: the model says it heard no question, and nothing else rides on that
+with mock.patch("ai.requests.post", return_value=ollama("You took Aspirin. " + ai.DIDNT_HEAR)):
+    assert ai.answer("Did you get pizza? The food is in the main hall.", log, meds) == ai.DIDNT_HEAR
+
 with mock.patch("ai.requests.post", return_value=ollama("model 'gemma4:12b-mlx' not found", ok=False)):
     try:
         ai.answer("Did I take my aspirin?", log)

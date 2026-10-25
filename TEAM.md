@@ -215,7 +215,7 @@ Every alert goes to the dashboard and by push to that role's phones. Pill time p
 1. `Patient.phone`: the reminder text goes to the patient's own phone, but only `family_phone` exists today.
 2. `Doctor.phone` (optional): only if we want refill alerts as SMS too; otherwise doctor alerts just show on the dashboard.
 3. `Medicine.slot` is `1`-`7` (boxes 1-3 top row, 4-6 middle row, 7 the long bottom box; changed from 1-3 at 17:30). Two medicines can't share a slot: reject in `POST /medicines`.
-4. Dose log passed to `answer()`: a list of `{"medicine": "Aspirin", "due_at": iso, "status": "taken", "taken_at": iso}`. Minh Pham codes against this shape.
+4. Dose log passed to `answer()`: a list of `{"medicine": "Aspirin", "due_at": iso, "status": "taken", "taken_at": iso}`. Minh Pham codes against this shape. Third argument (optional): the patient's medicines as `Medicine` JSON, so it can answer "when is my next pill", "which box", "how many left".
 
 ## Each person's task list
 

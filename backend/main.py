@@ -842,7 +842,8 @@ def ask(patient_id: int, audio: UploadFile = File(...)):
     # no transcript (Ollama down, model not pulled, audio not WAV): say sorry, never answer a question nobody asked
     question = try_ai(ai.transcribe, audio.file.read(), fallback=None)
     heard = perf_counter()
-    text = sorry if question is None else try_ai(ai.answer, question, dose_log(patient_id), fallback=sorry)
+    meds = [m.model_dump(mode="json") for m in medicines_of(patient_id)]  # schedule, box, pills left
+    text = sorry if question is None else try_ai(ai.answer, question, dose_log(patient_id), meds, fallback=sorry)
     answered = perf_counter()
     audio_url = speech_url(text)
     # where a slow answer's time went (the steps run one after another)

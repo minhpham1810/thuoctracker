@@ -216,50 +216,86 @@ def transcribe(audio: bytes) -> str:
          "images": [base64.b64encode(audio).decode()]}])
 
 
-def answer(question: str, dose_log: list[dict]) -> str:
-    """Answer ONLY from the real dose log. Never advise or change a dose.
+def answer(question: str, dose_log: list[dict], medicines: list[dict] = ()) -> str:
+    """Answer ONLY from the patient's real data. Never advise or change a dose.
 
     dose_log items, newest first: {"medicine", "color", "due_at", "status", "taken_at"} (see TEAM.md).
+    medicines: the cabinet's Medicine rows as JSON ({"name", "color", "dose", "times", "slot", "pills_left",
+    "expiration"}), so it can also say what's next, which box, and how many are left.
     """
     if not question.strip():
         return DIDNT_HEAR
     log = dose_log[:50]
-    if not log:
+    if not log and not medicines:
         return NO_DOSES  # from the data: nothing for the model to read, so it can only make things up
-    names = {x["medicine"].lower() for x in log}
+    now = datetime.now()
+    meds, today, schedule = [], [], []  # schedule: today's pill times in the log's shape, for the checks below
+    for m in medicines:
+        pill = f"{m['name']} ({m['color']} pill)"
+        at = sorted(now.replace(hour=int(t[:2]), minute=int(t[3:]), second=0, microsecond=0) for t in m["times"])
+        exp = date.fromisoformat(m["expiration"])
+        meds.append(f"- {pill}: {m['dose']} at {' and '.join(map(_clock, at))}, box {m['slot']}, "
+                    f"{m['pills_left']} pills left, expires {exp:%B} {exp.day}, {exp.year}")
+        for t in at:
+            schedule.append({"medicine": m["name"], "color": m["color"], "due_at": t.isoformat(), "taken_at": None})
+            # today's doses worked out here: left to guess from the times, the model called later doses
+            # "missed" and gave an 8 AM dose as taken at 2 AM
+            row = next((x for x in log if x["medicine"] == m["name"] and x["due_at"][:16] == t.isoformat()[:16]), None)
+            today.append((t, pill, _did(row) if row else "still to come" if t > now else "not in the log"))
+    today.sort()
+    # the next pill too (left alone, the model said "your next dose is not listed in the log")
+    nxt = next(((t, p) for t, p, did in today if did == "still to come"), None)
+    if nxt:
+        next_pill = f"Next pill: {nxt[1]} at {_clock(nxt[0])} today."
+    elif today:
+        next_pill = f"Next pill: tomorrow, {today[0][1]} at {_clock(today[0][0])}."
+    names = {x["medicine"].lower() for x in log + schedule}
     # asking about a medicine that isn't in the log: answer from the data too (the model invented doses for it)
     for drug in sorted(_drugs_in(question)):
         if not _in_log(drug, names):
             return f"Your log doesn't mention {drug}."
-    now = datetime.now()
     lines = []
     # small local models get days wrong from raw timestamps ("yesterday" became "today"), so Python writes
     # "Yesterday, 8 in the morning" and the model only reads. Newest 50: Ollama's default context is 4096 tokens.
     for x in log:
         due = datetime.fromisoformat(x["due_at"])
-        taken = f"taken at {_clock(datetime.fromisoformat(x['taken_at']))}" if x["taken_at"] else "taken"
-        did = {"taken": taken, "missed": "missed", "pending": "due now, not taken yet"}.get(x["status"], x["status"])
         # without the color the model guessed which pill was "the red one", and got it wrong
         pill = f"{x['medicine']} ({x['color']} pill)" if x.get("color") else x["medicine"]
-        lines.append(f"- {_day(due, now)}, {_clock(due)}: {pill}, {did}")
+        lines.append(f"- {_day(due, now)}, {_clock(due)}: {pill}, {_did(x)}")
+    cabinet = ""
+    if medicines:
+        cabinet = ("Medicines the patient takes (every pill time, box, pills left, expiry):\n" + "\n".join(meds) + "\nToday's pills:\n"
+                   + "\n".join(f"- {_clock(t)}: {p}, {did}" for t, p, did in today) + f"\n{next_pill}\n")
     text = _ollama([
         {"role": "system", "content":
             "You are the voice of a pill cabinet, talking to an elderly patient. Answer in one or two short, kind "
-            "sentences, using only the dose log you are given. Mention every dose the question covers, missed ones "
-            "too. Say times exactly as the log writes them. Never tell the patient to take, skip, "
-            "double or change any dose, and never give medical advice. If the question asks what to do (like whether "
-            "to take a pill now), or the log does not answer it, reply with exactly this sentence and nothing else: "
-            f'"{DONT_KNOW}"'},
-        {"role": "user", "content": f"It is now {now:%A %B} {now.day}, {_clock(now)}.\nDose log, newest first:\n"
-                                    + "\n".join(lines) + f"\n\nQuestion: {question}"}])
+            "sentences, using only the medicines and dose log you are given. Mention every dose the question covers, "
+            "missed ones too. Say times exactly as they are written. For today's doses, go by Today's pills. "
+            "Never tell the patient to take, skip, double or change any dose, and never give medical advice. "
+            "If the question asks for advice (like whether to take a pill now), or what you are given does not "
+            f'answer it, reply with exactly this sentence and nothing else: "{DONT_KNOW}" '
+            # the Pi raises quiet recordings up to 20x, so people talking across the room come through clearly
+            "If the words are not a question to you about the patient's medicines or pills (for example people "
+            f'talking to each other nearby), reply with exactly this sentence and nothing else: "{DIDNT_HEAR}"'},
+        {"role": "user", "content": f"It is now {now:%A %B} {now.day}, {_clock(now)}.\n" + cabinet
+                                    + "Dose log, newest first:\n" + ("\n".join(lines) or "- no doses yet")
+                                    + f"\n\nQuestion: {question}"}])
     # a refusal is exact: the small model sometimes adds "facts" before it, once a dose that never existed
+    if DIDNT_HEAR.rstrip(".") in text:
+        return DIDNT_HEAR
     if DONT_KNOW.rstrip(".") in text:
         return DONT_KNOW
-    why = _ungrounded(text, log, now)
+    why = _ungrounded(text, log + schedule, now)
     if why:
         print(f"[ai] answer not in the dose log ({why}), said DONT_KNOW instead: {text!r}")
         return DONT_KNOW
     return text
+
+
+def _did(x: dict) -> str:
+    """What happened to one dose-log entry, in words."""
+    taken = f"taken at {_clock(datetime.fromisoformat(x['taken_at']))}" if x["taken_at"] else "taken"
+    return {"taken": taken, "missed": "missed", "pending": "due now, not taken yet"}.get(x["status"], x["status"])
 
 
 def _drugs_in(text: str) -> set[str]:
@@ -296,7 +332,7 @@ def _times_in(text: str) -> list[tuple[int, int, bool]]:
 
 def _ungrounded(text: str, log: list[dict], now: datetime) -> str:
     """Why an answer isn't backed by the dose log ("" if it is): every medicine, pill color and time it names
-    must be in the log (a time can also be "now")."""
+    must be in the log or the schedule answer() adds to it (a time can also be "now")."""
     names = {x["medicine"].lower() for x in log}
     for drug in _drugs_in(text):
         if not _in_log(drug, names):
