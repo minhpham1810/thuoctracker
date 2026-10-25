@@ -17,7 +17,8 @@ const NATIVE_MODULES = [
   'ExpoNotificationChannelGroupManager', 'ExpoNotificationCategoriesModule', 'ExpoBadgeModule',
   'ExpoBackgroundNotificationTasksModule',
 ];
-const Notifications = NATIVE_MODULES.every((m) => requireOptionalNativeModule(m))
+// iOS Expo Go ships expo-notifications; the list has Android-only modules (channels), so only check on Android
+const Notifications = Platform.OS === 'ios' || NATIVE_MODULES.every((m) => requireOptionalNativeModule(m))
   ? require('expo-notifications')
   : null;
 
