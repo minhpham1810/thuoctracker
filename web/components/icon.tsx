@@ -10,6 +10,12 @@ const PATHS = {
   plus: <><path d="M5 12h14" /><path d="M12 5v14" /></>,
   close: <><path d="M18 6 6 18" /><path d="m6 6 12 12" /></>,
   bell: <><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></>,
+  message: <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />,
+  external: <><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></>,
+  logout: <><path d="m16 17 5-5-5-5" /><path d="M21 12H9" /><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /></>,
+  chevron: <path d="m6 9 6 6 6-6" />,
+  back: <path d="m15 18-6-6 6-6" />,
+  send: <><path d="M14.5 21.7a.5.5 0 0 0 .94-.03l6.5-19a.5.5 0 0 0-.64-.64l-19 6.5a.5.5 0 0 0-.03.94l7.93 3.18a2 2 0 0 1 1.11 1.11z" /><path d="m21.85 2.15-10.94 10.94" /></>,
   wifiOff: <><path d="M12 20h.01" /><path d="M8.5 16.43a5 5 0 0 1 7 0" /><path d="M2 8.82a15 15 0 0 1 4.17-2.65" /><path d="M10.66 5c4.01-.36 8.14.9 11.34 3.76" /><path d="M16.85 11.25a10 10 0 0 1 2.22 1.68" /><path d="M5 13a10 10 0 0 1 5.24-2.76" /><path d="m2 2 20 20" /></>,
 };
 
@@ -24,11 +30,18 @@ export function Icon({ name, className = "icon" }: { name: IconName; className?:
   );
 }
 
-export function Logo({ size = 34 }: { size?: number }) {
+// The cabinet itself: boxes 1-3, 4-6 and the long box 7. invert: teal body for light backgrounds.
+export function Logo({ size = 34, invert = false }: { size?: number; invert?: boolean }) {
+  const [body, door] = invert ? ["#0e7490", "#fff"] : ["#fff", "#0e7490"];
   return (
     <svg width={size} height={size} viewBox="0 0 34 34" aria-hidden="true">
-      <rect width="34" height="34" rx="9" fill="#fff" />
-      <path d="M14 8h6v6h6v6h-6v6h-6v-6H8v-6h6z" fill="#0e7490" />
+      <rect width="34" height="34" rx="9" fill={body} />
+      {/* tall doors with hairline gaps, so it reads as a cabinet; box 2 lit the way the cabinet shows which box to open */}
+      <g fill={door}>
+        {[6, 13.7, 21.4].map((x) => [6, 15.2].map((y) => <rect key={`${x}-${y}`} x={x} y={y} width="6.6" height="8.2" rx="1.2" />))}
+        <rect x="6" y="24.4" width="22" height="3.8" rx="1.2" />
+      </g>
+      <rect x="13.7" y="6" width="6.6" height="8.2" rx="1.2" fill="#fbbf24" />
     </svg>
   );
 }

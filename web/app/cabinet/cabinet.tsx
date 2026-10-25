@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon, Logo, type IconName } from "@/components/icon";
 import {
-  api, daysUntil, fmtDate, LONG_SLOT, pillColor, SLOTS,
-  type CabinetState, type DoseLog, type Medicine, type Slot,
+  api, clock, daysUntil, fmtDate, LONG_SLOT, pillColor, SLOTS, todayItems,
+  type CabinetState, type DoseLog, type Medicine, type Slot, type TodayItem, type TodayStatus,
 } from "@/lib/api";
 import { Glyph } from "./glyph";
 import Setup from "./setup";
@@ -546,12 +546,6 @@ function medFlags(m: Medicine, full = false) {
 const expiresIn = (days: number, full = false) => // full: "5 days" where there is room, or for screen readers
   days < 0 ? "Expired" : days === 0 ? "Expires today" : `Expires in ${days} ${full ? (days === 1 ? "day" : "days") : "d"}`;
 
-// "08:00" -> "8:00 AM"
-function clock(hhmm: string) {
-  const [h, min] = hhmm.split(":").map(Number);
-  return new Date(0, 0, 0, h, min).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-}
-
 // Display only: the next scheduled time today across this cabinet's medicines.
 function nextDose(meds: Medicine[], now: Date | null) {
   if (!now) return null;
@@ -561,28 +555,8 @@ function nextDose(meds: Medicine[], now: Date | null) {
   return upcoming ? { name: upcoming.name, slot: upcoming.slot, time: clock(upcoming.t) } : null;
 }
 
-type TodayStatus = "taken" | "missed" | "due" | "later";
-type TodayItem = { key: string; at: string; name: string; color: string | null; slot?: number; status: TodayStatus };
 const STATUS_ICON: Record<TodayStatus, IconName> = { taken: "check", missed: "x", due: "pill", later: "clock" };
 const STATUS_TEXT: Record<TodayStatus, string> = { taken: "Taken", missed: "Missed", due: "Due now", later: "Coming up" };
-
-// Today's doses from the log (taken / missed / due now) plus scheduled times still to come, in time order.
-// Display only: the backend owns the schedule.
-function todayItems(meds: Medicine[], doses: DoseLog[], now: Date | null): TodayItem[] {
-  if (!now) return [];
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const ymd = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  const hhmm = now.toTimeString().slice(0, 5);
-  const med = (id: number) => meds.find((m) => m.id === id);
-  const logged = doses.filter((d) => d.due_at.startsWith(ymd)).map((d) => ({
-    key: `d${d.id}`, at: d.due_at.slice(11, 16), name: med(d.medicine_id)?.name ?? "Medicine",
-    color: med(d.medicine_id)?.color ?? null, slot: med(d.medicine_id)?.slot, status: (d.status === "pending" ? "due" : d.status) as TodayStatus,
-  }));
-  const later = meds.flatMap((m) => m.times
-    .filter((t) => t > hhmm && !doses.some((d) => d.medicine_id === m.id && d.due_at.startsWith(`${ymd}T${t}`)))
-    .map((t) => ({ key: `m${m.id}-${t}`, at: t, name: m.name, color: m.color, slot: m.slot, status: "later" as TodayStatus })));
-  return [...logged, ...later].sort((a, b) => a.at.localeCompare(b.at));
-}
 
 // The browser records WebM (Safari: MP4), but the local speech model reads only WAV: decode, resample to
 // 16 kHz mono (what the Pi sends too) and put the 16-bit samples behind a WAV header.

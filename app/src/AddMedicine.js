@@ -1,8 +1,8 @@
 import { requireOptionalNativeModule } from 'expo';
 import { useEffect, useState } from 'react';
-import { Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { api } from './api';
-import { Button, Card, colors, Dot, Title } from './ui';
+import { Button, Capsule, colors, ErrorText, Field, Section } from './ui';
 
 // The Android build made before expo-image-picker was added has no camera module: say so instead of crashing.
 const ImagePicker = Platform.OS === 'web' || requireOptionalNativeModule('ExponentImagePicker')
@@ -99,59 +99,78 @@ export default function AddMedicine({ patientId, meds, autoScan, onDone }) {
   };
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16 }} keyboardShouldPersistTaps="handled">
+    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 48 }} keyboardShouldPersistTaps="handled">
       <View style={s.head}>
-        <Text style={s.h1}>Add a medicine</Text>
-        <Pressable onPress={() => onDone(false)} hitSlop={12}><Text style={s.link}>Cancel</Text></Pressable>
+        <Text style={s.h1} accessibilityRole="header">Add a medicine</Text>
+        <Pressable onPress={() => onDone(false)} hitSlop={12} accessibilityRole="button" style={s.cancel}>
+          <Text style={s.link}>Cancel</Text>
+        </Pressable>
       </View>
 
-      <Card>
-        <Text style={s.muted}>Scan the bottle label to fill in the form, or type it in below. Check every field before saving.</Text>
-        <Button title={reading ? 'Reading the label…' : '📷  Scan label with camera'} big onPress={() => !reading && scan(true)} />
-        <Button title="Choose a photo" kind="ghost" onPress={() => !reading && scan(false)} />
-        {photo && <Image source={{ uri: photo }} style={s.photo} resizeMode="contain" />}
-      </Card>
-
-      <Title>Medicine</Title>
-      <Field label="Name" value={f.name} onChangeText={set('name')} placeholder="e.g. Aspirin" />
-      <Field label="Dose" value={f.dose} onChangeText={set('dose')} placeholder="e.g. 1 pill" />
-      <Field label="Times (24h, comma separated)" value={f.times} onChangeText={set('times')} placeholder="e.g. 08:00, 20:00" />
-      <Field label="Expiration (YYYY-MM-DD)" value={f.expiration} onChangeText={set('expiration')} placeholder="e.g. 2027-01-31" />
-      <Field label="Pills in the bottle" value={f.pills_left} onChangeText={set('pills_left')} keyboardType="number-pad" placeholder="e.g. 30" />
-
-      <Title>Box in the cabinet</Title>
-      {free.length === 0 && <Text style={s.error}>All 7 boxes are full.</Text>}
-      <View style={s.chips}>
-        {free.map((n) => (
-          <Pressable key={n} onPress={() => set('slot')(n)} style={[s.chip, f.slot === n && s.chipOn]}>
-            <Text style={[s.chipText, f.slot === n && { color: '#fff' }]}>Box {n}</Text>
-          </Pressable>
-        ))}
+      <View style={s.scan}>
+        <Text style={s.scanTitle}>{reading ? 'Reading the label…' : 'Scan the bottle label'}</Text>
+        <Text style={s.muted}>The name, dose, times, expiration and pill count are filled in for you. Check every field before saving.</Text>
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+          <Button title="Take a photo" onPress={() => !reading && scan(true)} disabled={reading} style={{ flex: 1 }} />
+          <Button title="Choose photo" kind="secondary" onPress={() => !reading && scan(false)} disabled={reading} style={{ flex: 1 }} />
+        </View>
+        {photo && <Image source={{ uri: photo }} style={s.photo} resizeMode="contain" accessibilityLabel="Label photo" />}
       </View>
 
-      <Title>Pill color (shown on the cabinet screen)</Title>
-      <View style={s.chips}>
-        {COLORS.map((c) => (
-          <Pressable key={c} onPress={() => set('color')(c)} style={[s.chip, s.colorChip, f.color === c && s.chipOn]}>
-            <Dot color={c} />
-            <Text style={[s.chipText, f.color === c && { color: '#fff' }]}>{c}</Text>
-          </Pressable>
-        ))}
-      </View>
+      <Section title="Prescription">
+        <Field label="Name" value={f.name} onChangeText={set('name')} placeholder="e.g. Aspirin" />
+        <Field label="Dose" value={f.dose} onChangeText={set('dose')} placeholder="e.g. 1 pill" />
+        <Field label="Times" hint="24-hour, separated by commas" value={f.times} onChangeText={set('times')} placeholder="e.g. 08:00, 20:00" />
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <Field label="Pills in the bottle" value={f.pills_left} onChangeText={set('pills_left')} keyboardType="number-pad"
+                 placeholder="e.g. 30" style={{ flex: 1 }} />
+          <Field label="Expiration" value={f.expiration} onChangeText={set('expiration')} placeholder="YYYY-MM-DD" style={{ flex: 1 }} />
+        </View>
+      </Section>
 
-      {error && <Text style={s.error}>{error}</Text>}
-      <View style={{ height: 8 }} />
-      <Button title={saving ? 'Saving…' : 'Save medicine'} big onPress={() => !saving && !reading && save()} />
+      <Section title="Cabinet box">
+        {free.length === 0 && <ErrorText>All 7 boxes are full. Remove a medicine first.</ErrorText>}
+        {/* laid out like the cabinet: boxes 1-3, 4-6, then the long box 7 */}
+        <View style={s.cabinet}>
+          {[[1, 2, 3], [4, 5, 6], [7]].map((row) => (
+            <View key={row[0]} style={{ flexDirection: 'row', gap: 6 }}>
+              {row.map((n) => {
+                const used = meds.find((m) => m.slot === n);
+                const on = f.slot === n;
+                return (
+                  <Pressable key={n} onPress={used ? undefined : () => set('slot')(n)} disabled={!!used}
+                    accessibilityRole="radio" accessibilityState={{ checked: on, disabled: !!used }}
+                    accessibilityLabel={`Box ${n}, ${used ? `has ${used.name}` : 'free'}`}
+                    style={[s.boxOpt, used ? s.boxUsed : on ? s.boxOn : s.boxFree]}>
+                    <Text style={[s.boxNum, (used || on) && { color: colors.text }]}>{n}</Text>
+                    <Text style={[s.boxSub, (used || on) && { color: colors.muted }]} numberOfLines={1}>
+                      {used ? used.name : on ? 'Chosen' : 'Free'}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ))}
+        </View>
+      </Section>
+
+      <Section title="Pill color">
+        <Text style={[s.muted, { marginTop: -4, marginBottom: 10 }]}>Shown on the cabinet screen so the pill is easy to match.</Text>
+        <View style={s.chips}>
+          {COLORS.map((c) => (
+            <Pressable key={c} onPress={() => set('color')(c)} accessibilityRole="radio" accessibilityState={{ checked: f.color === c }}
+              style={[s.chip, f.color === c && s.chipOn]}>
+              <Capsule color={c} />
+              <Text style={[s.chipText, f.color === c && { fontWeight: '700' }]}>{c[0].toUpperCase() + c.slice(1)}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </Section>
+
+      <ErrorText>{error}</ErrorText>
+      <Button title={saving ? 'Saving…' : 'Save to cabinet'} big onPress={() => !saving && !reading && save()}
+              disabled={saving || reading} style={{ marginTop: 20 }} />
     </ScrollView>
-  );
-}
-
-function Field({ label, ...props }) {
-  return (
-    <View style={{ marginBottom: 10 }}>
-      <Text style={s.label}>{label}</Text>
-      <TextInput style={s.input} autoCorrect={false} {...props} />
-    </View>
   );
 }
 
@@ -165,18 +184,25 @@ function confirm(message) {
 }
 
 const s = StyleSheet.create({
-  head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  h1: { fontSize: 22, fontWeight: '800', color: colors.text },
-  link: { color: colors.primary, fontSize: 16 },
-  muted: { color: colors.muted, marginBottom: 8 },
-  photo: { width: '100%', height: 180, marginTop: 8, borderRadius: 10, backgroundColor: colors.bg },
-  label: { color: colors.muted, fontSize: 13, marginBottom: 4 },
-  input: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: 10, padding: 12, fontSize: 16 },
+  head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  h1: { fontSize: 26, fontWeight: '800', color: colors.text, letterSpacing: -0.5 },
+  cancel: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 10, backgroundColor: colors.card },
+  link: { color: colors.primaryInk, fontSize: 16, fontWeight: '600' },
+  muted: { color: colors.muted, fontSize: 14, lineHeight: 20 },
+  scan: { backgroundColor: colors.primaryWash, borderRadius: 18, padding: 16, borderWidth: 1.5, borderStyle: 'dashed',
+          borderColor: 'rgba(14,116,144,0.45)' },
+  scanTitle: { fontSize: 18, fontWeight: '700', color: colors.text, marginBottom: 4 },
+  photo: { width: '100%', height: 180, marginTop: 12, borderRadius: 12, backgroundColor: colors.card },
+  cabinet: { backgroundColor: colors.cab, borderRadius: 16, padding: 8, gap: 6 },
+  boxOpt: { flex: 1, minHeight: 54, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, justifyContent: 'center' },
+  boxFree: { backgroundColor: colors.well, borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,0.25)' },
+  boxOn: { backgroundColor: colors.card, borderWidth: 3, borderColor: '#7DD3E3' },
+  boxUsed: { backgroundColor: '#D6E3E6' },
+  boxNum: { fontSize: 17, fontWeight: '800', color: '#fff' },
+  boxSub: { fontSize: 13, color: '#CFE3E8' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { borderWidth: 1, borderColor: colors.line, backgroundColor: colors.card, borderRadius: 999,
-          paddingHorizontal: 14, paddingVertical: 8 },
-  colorChip: { flexDirection: 'row', alignItems: 'center' },
-  chipOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, borderWidth: 1, borderColor: colors.line2,
+          backgroundColor: colors.card, borderRadius: 999, paddingHorizontal: 14 },
+  chipOn: { borderColor: colors.primary, borderWidth: 2, backgroundColor: colors.primaryWash },
   chipText: { fontSize: 15, color: colors.text },
-  error: { color: colors.missed, marginTop: 10, fontSize: 15 },
 });

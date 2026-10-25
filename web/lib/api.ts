@@ -39,7 +39,9 @@ export type CabinetState = {
 };
 
 // ai.read_label returns null for anything it couldn't read
-export type LabelDraft = { name: string | null; dose: string | null; times: string[] | null; expiration: string | null };
+export type LabelDraft = {
+  name: string | null; dose: string | null; times: string[] | null; expiration: string | null; quantity: number | null;
+};
 
 // The dashboard sets the session token; the cabinet screen never does (its routes are login-free).
 let token: string | null = null;
@@ -77,3 +79,36 @@ export const daysUntil = (ymd: string) =>
   Math.ceil((new Date(`${ymd}T00:00`).getTime() - new Date().setHours(0, 0, 0, 0)) / 86_400_000);
 export const fmtDate = (ymd: string) =>
   new Date(`${ymd}T00:00`).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+// "Minh (grandson)" -> "MG", "Dr. Nguyen" -> "DN"
+export const initials = (name: string) =>
+  (name.match(/\p{L}+/gu) ?? ["?"]).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+export const ymdOf = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+// "08:00" -> "8:00 AM"
+export function clock(hhmm: string) {
+  const [h, min] = hhmm.split(":").map(Number);
+  return new Date(0, 0, 0, h, min).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+export type TodayStatus = "taken" | "missed" | "due" | "later";
+export type TodayItem = {
+  key: string; at: string; name: string; color: string | null; slot?: number; status: TodayStatus; log?: DoseLog;
+};
+
+// Today's doses from the log (taken / missed / due now) plus scheduled times still to come, in time order.
+// Display only: the backend owns the schedule.
+export function todayItems(meds: Medicine[], doses: DoseLog[], now: Date | null): TodayItem[] {
+  if (!now) return [];
+  const ymd = ymdOf(now);
+  const hhmm = now.toTimeString().slice(0, 5);
+  const med = (id: number) => meds.find((m) => m.id === id);
+  const logged = doses.filter((d) => d.due_at.startsWith(ymd)).map((d) => ({
+    key: `d${d.id}`, at: d.due_at.slice(11, 16), name: med(d.medicine_id)?.name ?? "Medicine", log: d,
+    color: med(d.medicine_id)?.color ?? null, slot: med(d.medicine_id)?.slot, status: (d.status === "pending" ? "due" : d.status) as TodayStatus,
+  }));
+  const later = meds.flatMap((m) => m.times
+    .filter((t) => t > hhmm && !doses.some((d) => d.medicine_id === m.id && d.due_at.startsWith(`${ymd}T${t}`)))
+    .map((t) => ({ key: `m${m.id}-${t}`, at: t, name: m.name, color: m.color, slot: m.slot, status: "later" as TodayStatus })));
+  return [...logged, ...later].sort((a, b) => a.at.localeCompare(b.at));
+}

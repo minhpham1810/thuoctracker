@@ -63,4 +63,3 @@ export const api = {
 
 // Backend times are local and naive ("2026-10-24T15:01:50.9"), so slice instead of new Date().
 export const hhmm = (iso) => (iso ? iso.slice(11, 16) : '');
-export const day = (iso) => (iso ? iso.slice(5, 10).replace('-', '/') : '');

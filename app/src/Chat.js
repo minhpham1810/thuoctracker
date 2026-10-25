@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { api, day, hhmm } from './api';
+import { api, hhmm } from './api';
 import { usePoll } from './hooks';
-import { colors } from './ui';
+import { clock, colors, fmtDay } from './ui';
 
 // 1:1 chat with someone in the user's care circle. Fetching it marks their messages read.
 export default function Chat({ user, other }) {
@@ -33,35 +33,39 @@ export default function Chat({ user, other }) {
         data={messages || []}
         keyExtractor={(m) => String(m.id)}
         contentContainerStyle={{ padding: 12 }}
-        ListEmptyComponent={<Text style={s.empty}>No messages yet.</Text>}
+        ListEmptyComponent={<Text style={s.empty}>No messages yet. Say hello to {other.name}.</Text>}
         renderItem={({ item: m }) => {
           const mine = m.from_id === user.id;
           return (
             <View style={[s.bubble, mine ? s.mine : s.theirs]}>
               <Text style={[s.text, mine && { color: '#fff' }]}>{m.text}</Text>
-              <Text style={[s.time, mine && { color: '#DCE7FF' }]}>{day(m.at)} {hhmm(m.at)}</Text>
+              <Text style={[s.time, mine && { color: 'rgba(255,255,255,0.8)' }]}>{fmtDay(m.at)}, {clock(hhmm(m.at))}</Text>
             </View>
           );
         }}
       />
       <View style={s.bar}>
-        <TextInput style={s.input} value={text} onChangeText={setText} placeholder="Message"
-                   onSubmitEditing={send} returnKeyType="send" />
-        <Pressable onPress={send} style={s.send}><Text style={s.sendText}>Send</Text></Pressable>
+        <TextInput style={s.input} value={text} onChangeText={setText} placeholder={`Message ${other.name}`}
+                   placeholderTextColor="#7F9398" onSubmitEditing={send} returnKeyType="send" multiline={false}
+                   accessibilityLabel="Message" />
+        <Pressable onPress={send} style={({ pressed }) => [s.send, !text.trim() && { opacity: 0.5 }, pressed && { opacity: 0.75 }]}
+                   accessibilityRole="button" accessibilityLabel="Send">
+          <Text style={s.sendText}>Send</Text>
+        </Pressable>
       </View>
     </KeyboardAvoidingView>
   );
 }
 
 const s = StyleSheet.create({
-  bubble: { maxWidth: '80%', borderRadius: 14, padding: 10, marginVertical: 4 },
-  mine: { alignSelf: 'flex-end', backgroundColor: colors.primary },
-  theirs: { alignSelf: 'flex-start', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
-  text: { fontSize: 16, color: colors.text },
-  time: { fontSize: 11, color: colors.muted, marginTop: 4, alignSelf: 'flex-end' },
-  empty: { textAlign: 'center', color: colors.muted, marginTop: 40 },
-  bar: { flexDirection: 'row', padding: 8, borderTopWidth: 1, borderColor: colors.line, backgroundColor: colors.card },
-  input: { flex: 1, fontSize: 16, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: colors.bg, borderRadius: 20 },
-  send: { justifyContent: 'center', paddingHorizontal: 16 },
-  sendText: { color: colors.primary, fontWeight: '700', fontSize: 16 },
+  bubble: { maxWidth: '80%', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 10, marginVertical: 3 },
+  mine: { alignSelf: 'flex-end', backgroundColor: colors.primary, borderBottomRightRadius: 6 },
+  theirs: { alignSelf: 'flex-start', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderBottomLeftRadius: 6 },
+  text: { fontSize: 16, lineHeight: 22, color: colors.text },
+  time: { fontSize: 12, color: colors.muted, marginTop: 4, alignSelf: 'flex-end' },
+  empty: { textAlign: 'center', color: colors.muted, marginTop: 40, fontSize: 15 },
+  bar: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderTopWidth: 1, borderColor: colors.line, backgroundColor: colors.card },
+  input: { flex: 1, minHeight: 46, fontSize: 16, paddingHorizontal: 16, backgroundColor: colors.bg, borderRadius: 23, color: colors.text },
+  send: { minHeight: 46, justifyContent: 'center', paddingHorizontal: 18, borderRadius: 23, backgroundColor: colors.primary },
+  sendText: { color: '#fff', fontWeight: '700', fontSize: 16 },
 });

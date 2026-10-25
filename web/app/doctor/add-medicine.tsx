@@ -2,14 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/icon";
-import { api, LONG_SLOT, PILL_COLOR_NAMES, SLOTS, type LabelDraft, type Medicine, type Patient } from "@/lib/api";
+import { api, LONG_SLOT, PILL_COLOR_NAMES, pillColor, SLOTS, type LabelDraft, type Medicine, type Patient } from "@/lib/api";
 
 const TIMES = /^\s*\d{2}:\d{2}(\s*,\s*\d{2}:\d{2})*\s*$/;
 
 // Add: label photo -> /ai/label draft -> doctor checks it -> POST /medicines.
-// Edit (med given): same form prefilled -> PATCH /medicines/{id}; refill = change "Pills in slot".
-export default function AddMedicine({ patient, meds, med, onClose, onSaved }: {
-  patient: Patient; meds: Medicine[]; med?: Medicine; onClose: () => void; onSaved: () => void;
+// Edit (med given): same form prefilled -> PATCH /medicines/{id}; refill = change "Pills in the box".
+// slot: the empty box the doctor clicked
+export default function AddMedicine({ patient, meds, med, slot, onClose, onSaved }: {
+  patient: Patient; meds: Medicine[]; med?: Medicine; slot?: number; onClose: () => void; onSaved: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const freeSlots = SLOTS.filter((s) => s === med?.slot || !meds.some((m) => m.slot === s));
@@ -17,10 +18,11 @@ export default function AddMedicine({ patient, meds, med, onClose, onSaved }: {
     name: med.name, dose: med.dose, times: med.times.join(", "), slot: String(med.slot),
     pills_left: String(med.pills_left), expiration: med.expiration, color: med.color,
   } : {
-    name: "", dose: "1 pill", times: "", slot: String(freeSlots[0] ?? ""), pills_left: "10", expiration: "", color: "blue",
+    // empty, not example values: anything filled in must come from the label or the doctor
+    name: "", dose: "", times: "", slot: String(slot ?? freeSlots[0] ?? ""), pills_left: "", expiration: "", color: "blue",
   });
   const [confirmRemove, setConfirmRemove] = useState(false);
-  const [note, setNote] = useState<{ text: string; ai?: boolean }>({ text: "Or fill the form by hand." });
+  const [note, setNote] = useState<{ text: string; ai?: boolean }>({ text: "Or type it in below." });
   const [reading, setReading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -43,8 +45,10 @@ export default function AddMedicine({ patient, meds, med, onClose, onSaved }: {
         ...f,
         name: d.name ?? f.name, dose: d.dose ?? f.dose,
         times: d.times?.join(", ") ?? f.times, expiration: d.expiration ?? f.expiration,
+        pills_left: d.quantity != null ? String(d.quantity) : f.pills_left,
       }));
-      const missing = (["name", "dose", "times", "expiration"] as const).filter((k) => d[k] == null);
+      const missing = (["name", "dose", "times", "expiration", "quantity"] as const).filter((k) => d[k] == null)
+        .map((k) => (k === "quantity" ? "pill count" : k));
       setNote({
         text: missing.length
           ? `Filled in from the label, except ${missing.join(", ")}. Check every field before saving.`
@@ -101,56 +105,85 @@ export default function AddMedicine({ patient, meds, med, onClose, onSaved }: {
     <dialog ref={dialog} aria-labelledby="add-title" onClose={onClose}>
       <form onSubmit={save}>
         <div className="dialog-head">
-          <h3 id="add-title">{med ? `Edit ${med.name}` : `Add medicine for ${patient.name}`}</h3>
-          <button className="btn btn-sm" type="button" onClick={onClose} aria-label="Close">
+          <div>
+            <h3 id="add-title">{med ? `Edit ${med.name}` : "Add a medicine"}</h3>
+            <p className="muted">{patient.name}&apos;s cabinet</p>
+          </div>
+          <button className="btn btn-quiet btn-icon" type="button" onClick={onClose} aria-label="Close">
             <Icon name="close" />
           </button>
         </div>
         <div className="dialog-body">
-          {!med && (<>
-            <label className="dropzone">
-              <Icon name="camera" />
-              <div>
-                <strong>{reading ? "Reading label…" : "Photo of the bottle label"}</strong>
-                <span>AI reads the name, dose, schedule and expiration</span>
-              </div>
-              <input type="file" accept="image/*" capture="environment" disabled={reading}
-                onChange={(e) => e.target.files?.[0] && readLabel(e.target.files[0])} />
-            </label>
-            <p className={`note${note.ai ? " ai" : ""}`} aria-live="polite">{note.text}</p>
-          </>)}
-          <div className="fields">
-            <label className="field full">Medicine name
-              <input value={form.name} onChange={set("name")} required autoComplete="off" />
-            </label>
-            <label className="field">Dose
-              <input value={form.dose} onChange={set("dose")} required placeholder="1 pill" />
-            </label>
-            <label className="field">Times per day <small>24h, comma separated</small>
-              <input value={form.times} onChange={set("times")} required placeholder="08:00, 20:00" />
-            </label>
-            <label className="field">Cabinet slot
-              <select value={form.slot} onChange={set("slot")} required>
-                {freeSlots.map((s) => <option key={s} value={s}>Slot {s}{s === LONG_SLOT ? " (long box)" : ""}</option>)}
-              </select>
-            </label>
-            <label className="field">Pills in slot
-              <input type="number" min={0} max={999} value={form.pills_left} onChange={set("pills_left")} required />
-            </label>
-            <label className="field">Expiration
-              <input type="date" value={form.expiration} onChange={set("expiration")} required />
-            </label>
-            <label className="field">Pill color <small>shown on the cabinet</small>
-              <select value={form.color} onChange={set("color")}>
-                {PILL_COLOR_NAMES.map((c) => <option key={c}>{c}</option>)}
-              </select>
-            </label>
-          </div>
+          {!med && (
+            <div className="scan">
+              <label className={`dropzone${reading ? " busy" : ""}`}>
+                <Icon name="camera" />
+                <span>
+                  <strong>{reading ? "Reading the label…" : "Scan the bottle label"}</strong>
+                  <span>Take or choose a photo. The name, dose, times, expiration and pill count are filled in for you.</span>
+                </span>
+                <input type="file" accept="image/*" capture="environment" disabled={reading}
+                  onChange={(e) => e.target.files?.[0] && readLabel(e.target.files[0])} />
+              </label>
+              <p className={`note${note.ai ? " ai" : ""}`} aria-live="polite">{note.text}</p>
+            </div>
+          )}
+
+          <fieldset className="group">
+            <legend>Prescription</legend>
+            <div className="fields">
+              <label className="field full">Medicine name
+                <input value={form.name} onChange={set("name")} required autoComplete="off" placeholder="e.g. Metformin 500 mg" />
+              </label>
+              <label className="field">Dose
+                <input value={form.dose} onChange={set("dose")} required placeholder="e.g. 1 pill" />
+              </label>
+              <label className="field">Times <small>24-hour, separated by commas</small>
+                <input value={form.times} onChange={set("times")} required placeholder="e.g. 08:00, 20:00" />
+              </label>
+              <label className="field">Pills in the box
+                <input type="number" min={0} max={999} value={form.pills_left} onChange={set("pills_left")} required placeholder="e.g. 30" />
+              </label>
+              <label className="field">Expiration
+                <input type="date" value={form.expiration} onChange={set("expiration")} required />
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset className="group">
+            <legend>Cabinet box</legend>
+            {/* Laid out like the cabinet: boxes 1-3, 4-6, then the long box 7 */}
+            <div className="box-pick">
+              {SLOTS.map((s) => {
+                const used = meds.find((m) => m.slot === s && m.id !== med?.id);
+                return (
+                  <label key={s} className={`box-opt${s === LONG_SLOT ? " long" : ""}`}>
+                    <input type="radio" name="slot" value={s} checked={form.slot === String(s)} disabled={!!used}
+                      onChange={set("slot")} required />
+                    <span><b>{s}</b><small>{used ? used.name : s === LONG_SLOT ? "Long box, free" : "Free"}</small></span>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+
+          <fieldset className="group">
+            <legend>Pill color <small>Shown on the cabinet screen so the patient can match it</small></legend>
+            <div className="swatches">
+              {PILL_COLOR_NAMES.map((c) => (
+                <label key={c} className="swatch">
+                  <input type="radio" name="color" value={c} checked={form.color === c} onChange={set("color")} />
+                  <span className="capsule" style={{ "--pill": pillColor(c) } as React.CSSProperties} aria-hidden="true" />
+                  {c}
+                </label>
+              ))}
+            </div>
+          </fieldset>
           {error && <p className="form-error" role="alert">{error}</p>}
         </div>
         <div className="dialog-foot">
           {med && (
-            <button className="btn" type="button" onClick={remove} disabled={saving} style={{ marginRight: "auto", color: "var(--bad)" }}>
+            <button className="btn btn-quiet btn-danger-text" type="button" onClick={remove} disabled={saving}>
               {confirmRemove ? "Click again to remove" : "Remove from cabinet"}
             </button>
           )}

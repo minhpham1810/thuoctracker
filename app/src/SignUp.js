@@ -1,10 +1,15 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, Text, TextInput } from 'react-native';
+import { Pressable, ScrollView, Text } from 'react-native';
 import { api } from './api';
-import { s } from './Login';
-import { Button, Tabs, Title } from './ui';
+import { auth, Brand } from './Login';
+import { Button, colors, ErrorText, Field, Tabs } from './ui';
 
 const ROLES = { Patient: 'patient', Family: 'family', Doctor: 'doctor' };
+const ABOUT = {
+  Patient: 'You take the medicines in the cabinet.',
+  Family: 'You look after someone who uses the cabinet. You get their alerts.',
+  Doctor: 'You prescribe. Your patients link to you with your email.',
+};
 
 // Anyone can sign up. A patient links to their doctor, family to their patient, by that person's email.
 export default function SignUp({ onLogin, onBack }) {
@@ -13,11 +18,7 @@ export default function SignUp({ onLogin, onBack }) {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const field = (k, label, props = {}) => (
-    <>
-      <Title>{label}</Title>
-      <TextInput style={s.input} value={f[k]} onChangeText={(v) => setF((x) => ({ ...x, [k]: v }))}
-                 autoCapitalize="none" autoCorrect={false} {...props} />
-    </>
+    <Field label={label} value={f[k]} onChangeText={(v) => setF((x) => ({ ...x, [k]: v }))} autoCapitalize="none" {...props} />
   );
 
   const submit = async () => {
@@ -40,19 +41,21 @@ export default function SignUp({ onLogin, onBack }) {
   };
 
   return (
-    <ScrollView contentContainerStyle={s.wrap} keyboardShouldPersistTaps="handled">
-      <Text style={s.logo}>Create an account</Text>
+    <ScrollView contentContainerStyle={auth.wrap} keyboardShouldPersistTaps="handled">
+      <Brand title="Create an account" />
+      <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text, marginBottom: 8 }}>I am</Text>
       <Tabs tabs={Object.keys(ROLES)} value={role} onChange={setRole} />
-      {field('name', 'Name', { autoCapitalize: 'words', placeholder: role === 'Family' ? 'Minh (grandson)' : '' })}
+      <Text style={{ fontSize: 15, color: colors.muted, marginTop: 10, marginBottom: 20, lineHeight: 21 }}>{ABOUT[role]}</Text>
+      {field('name', 'Name', { autoCapitalize: 'words', autoComplete: 'name', placeholder: role === 'Family' ? 'e.g. Minh (grandson)' : '' })}
       {field('email', 'Email', { keyboardType: 'email-address', autoComplete: 'email' })}
-      {field('password', 'Password (6+ characters)', { secureTextEntry: true, autoComplete: 'new-password' })}
+      {field('password', 'Password', { secureTextEntry: true, autoComplete: 'new-password', hint: 'at least 6 characters' })}
       {role === 'Patient' && field('age', 'Age', { keyboardType: 'number-pad' })}
       {role === 'Patient' && field('doctor_email', "Your doctor's email", { keyboardType: 'email-address' })}
-      {role === 'Family' && field('patient_email', "The patient's email", { keyboardType: 'email-address' })}
-      <Button title={busy ? 'Creating…' : 'Create account'} onPress={submit} />
-      {error && <Text style={s.error}>{error}</Text>}
-      <Pressable onPress={onBack} hitSlop={8}>
-        <Text style={s.link}>I have an account</Text>
+      {role === 'Family' && field('patient_email', "Their email", { keyboardType: 'email-address', hint: 'the person you look after' })}
+      <ErrorText>{error}</ErrorText>
+      <Button title={busy ? 'Creating…' : 'Create account'} onPress={submit} disabled={busy} big />
+      <Pressable onPress={onBack} hitSlop={8} accessibilityRole="button" style={auth.linkBtn}>
+        <Text style={auth.linkText}>Already have an account? <Text style={auth.link}>Log in</Text></Text>
       </Pressable>
     </ScrollView>
   );

@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, fmtDateTime, type Contact, type Message, type User } from "@/lib/api";
+import { Icon } from "@/components/icon";
+import { api, fmtDateTime, initials, type Contact, type Message, type User } from "@/lib/api";
 
 const THREAD_MS = 2000;
 
@@ -11,7 +12,7 @@ export default function Messages({ me, contacts, withId, onOpen, onChange }: {
 }) {
   const other = contacts.find((c) => c.user.id === withId)?.user;
   if (other) return <Thread me={me} other={other} onBack={() => onOpen(null)} onChange={onChange} />;
-  if (!contacts.length) return <p className="empty">No one in your care circle yet.</p>;
+  if (!contacts.length) return <p className="empty">No one in your care circle yet. Patients and family appear here once they sign up.</p>;
 
   const nameOf = (id: number) => contacts.find((c) => c.user.id === id)?.user.name ?? "";
   return (
@@ -19,6 +20,7 @@ export default function Messages({ me, contacts, withId, onOpen, onChange }: {
       {contacts.map(({ user: u, unread, last }) => (
         <li key={u.id}>
           <button type="button" onClick={() => onOpen(u.id)}>
+            <span className="avatar sm" aria-hidden="true">{initials(u.name)}</span>
             <span>
               <strong>{u.name}</strong>
               <small>{u.role === "family" ? `Family of ${nameOf(u.patient_id)}` : "Patient"}</small>
@@ -72,7 +74,10 @@ function Thread({ me, other, onBack, onChange }: { me: User; other: User; onBack
   return (
     <div className="thread">
       <div className="thread-head">
-        <button type="button" className="btn btn-sm" onClick={onBack}>‹ Back</button>
+        <button type="button" className="btn btn-quiet btn-icon" onClick={onBack} aria-label="Back to all messages">
+          <Icon name="back" />
+        </button>
+        <span className="avatar sm" aria-hidden="true">{initials(other.name)}</span>
         <strong>{other.name}</strong>
       </div>
       <div className="bubbles" aria-live="polite">
@@ -81,13 +86,13 @@ function Thread({ me, other, onBack, onChange }: { me: User; other: User; onBack
             {m.text}<small>{fmtDateTime(m.at)}</small>
           </p>
         ))}
-        {!messages.length && <p className="empty">No messages yet.</p>}
+        {!messages.length && <p className="empty">No messages yet. Say hello to {other.name}.</p>}
         <div ref={end} />
       </div>
       <form className="thread-send" onSubmit={send}>
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder={`Message ${other.name}`}
           aria-label="Message" autoFocus />
-        <button type="submit" className="btn btn-primary btn-sm">Send</button>
+        <button type="submit" className="btn btn-primary btn-icon" aria-label="Send"><Icon name="send" /></button>
       </form>
       {error && <p className="form-error" role="alert">{error}</p>}
     </div>

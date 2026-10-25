@@ -11,7 +11,7 @@ import PatientView from './src/PatientView';
 import People from './src/People';
 import { clearSession, loadSession, saveSession } from './src/session';
 import SignUp from './src/SignUp';
-import { colors, Tabs } from './src/ui';
+import { colors, Logo, Tabs } from './src/ui';
 
 // Restore the last login before the first render, so the app opens where it was.
 function restore() {
@@ -67,21 +67,34 @@ export default function App() {
       : chat;
   } else if (user) {
     const people = <People user={user} onOpen={setOther} />;
+    // patient and family: today's pills come first, like the cabinet; the care team is one tap away
     body = patientId
-      ? <Switcher tabs={{ People: people, Today: <PatientView user={user} patientId={patientId} /> }} />
+      ? <Switcher tabs={{ Today: <PatientView user={user} patientId={patientId} />, 'Care team': people }} />
       : people;
   }
+  const subtitle = other ? (other.role === 'patient' ? 'Patient' : other.role === 'family' ? 'Family' : 'Doctor')
+    : user?.role === 'doctor' ? 'Your patients and their families' : user?.role === 'family' ? 'Family account' : 'Your medicine cabinet';
 
   return (
     <SafeAreaProvider>
       <SafeAreaView style={s.screen} edges={['top', 'bottom']}>
         {user && (
           <View style={s.header}>
-            <Pressable onPress={other ? () => setOther(null) : () => logout()} hitSlop={12}>
-              <Text style={s.headerBtn}>{other ? '‹ Back' : 'Log out'}</Text>
-            </Pressable>
-            <Text style={s.headerTitle} numberOfLines={1}>{other ? other.name : user.name}</Text>
-            <View style={{ width: 60 }} />
+            {other ? (
+              <Pressable onPress={() => setOther(null)} hitSlop={12} accessibilityRole="button" accessibilityLabel="Back"
+                style={s.back}>
+                <Text style={s.backText}>‹</Text>
+              </Pressable>
+            ) : <Logo size={32} />}
+            <View style={{ flex: 1 }}>
+              <Text style={s.headerTitle} numberOfLines={1} accessibilityRole="header">{other ? other.name : user.name}</Text>
+              <Text style={s.headerSub} numberOfLines={1}>{subtitle}</Text>
+            </View>
+            {!other && (
+              <Pressable onPress={() => logout()} hitSlop={12} accessibilityRole="button" style={s.headerBtn}>
+                <Text style={s.headerBtnText}>Log out</Text>
+              </Pressable>
+            )}
           </View>
         )}
         {user && <Watcher user={user} />}
@@ -98,7 +111,7 @@ function Switcher({ tabs }) {
   const [tab, setTab] = useState(names[0]);
   return (
     <View style={{ flex: 1 }}>
-      <Tabs tabs={names} value={tab} onChange={setTab} />
+      <View style={s.tabsBar}><Tabs tabs={names} value={tab} onChange={setTab} /></View>
       {tabs[tab]}
     </View>
   );
@@ -114,9 +127,12 @@ function Banner() {
   }, []);
   if (!note) return null;
   return (
-    <Pressable style={s.banner} onPress={() => setNote(null)}>
-      <Text style={s.bannerTitle}>{note.title}</Text>
-      <Text style={s.bannerBody}>{note.body}</Text>
+    <Pressable style={s.banner} onPress={() => setNote(null)} accessibilityRole="alert" accessibilityHint="Tap to dismiss">
+      <View style={s.bannerMark} />
+      <View style={{ flex: 1 }}>
+        <Text style={s.bannerTitle}>{note.title}</Text>
+        <Text style={s.bannerBody}>{note.body}</Text>
+      </View>
     </Pressable>
   );
 }
@@ -157,12 +173,18 @@ async function collectEvents(user) {
 
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16,
-            paddingVertical: 12, backgroundColor: colors.card, borderBottomWidth: 1, borderColor: colors.line },
-  headerBtn: { color: colors.primary, fontSize: 16, width: 60 },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: colors.text, flex: 1, textAlign: 'center' },
-  banner: { position: 'absolute', top: 60, left: 12, right: 12, backgroundColor: colors.text, borderRadius: 14,
-            padding: 14, elevation: 8, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 10 },
-  bannerTitle: { color: '#fff', fontWeight: '800', fontSize: 15 },
-  bannerBody: { color: '#E4E7EC', fontSize: 15, marginTop: 2 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 10,
+            backgroundColor: colors.card, borderBottomWidth: 1, borderColor: colors.line },
+  back: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg },
+  backText: { fontSize: 30, lineHeight: 32, color: colors.primaryInk, marginTop: -3 },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: colors.text },
+  headerSub: { fontSize: 13, color: colors.muted },
+  headerBtn: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 10, backgroundColor: colors.bg },
+  headerBtnText: { color: colors.primaryInk, fontSize: 15, fontWeight: '600' },
+  tabsBar: { paddingHorizontal: 16, paddingVertical: 10, backgroundColor: colors.card, borderBottomWidth: 1, borderColor: colors.line },
+  banner: { position: 'absolute', top: 64, left: 12, right: 12, flexDirection: 'row', gap: 12, backgroundColor: colors.text,
+            borderRadius: 16, padding: 16, elevation: 8, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 12 },
+  bannerMark: { width: 4, borderRadius: 2, backgroundColor: '#FBBF24' },
+  bannerTitle: { color: '#fff', fontWeight: '800', fontSize: 16 },
+  bannerBody: { color: '#DCE6E8', fontSize: 15, marginTop: 2, lineHeight: 21 },
 });
