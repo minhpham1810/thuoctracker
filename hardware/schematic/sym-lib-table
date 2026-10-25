@@ -1,0 +1,1 @@
+(sym_lib_table (version 7) (lib (name "Cabinet") (type "KiCad") (uri "${KIPRJMOD}/Cabinet.kicad_sym") (options "") (descr "Cabinet module terminal symbols")))
