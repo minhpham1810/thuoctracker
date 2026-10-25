@@ -57,7 +57,7 @@ CURATED = {
     "apixaban": ("ELIQUIS", "SQUIBB", None, None, ["anticoagulant"]),
     "rivaroxaban": ("XARELTO", "JANSSEN", None, None, ["anticoagulant"]),
     "amlodipine": ("NORVASC", None, None, None, ["calcium channel blocker", "antihypertensive"]),
-    "diltiazem": ("DILTIAZEM HYDROCHLORIDE", None, "CAPSULE", None, ["calcium channel blocker", "antihypertensive"]),
+    "diltiazem": ("DILTIAZEM HYDROCHLORIDE", None, "CAPSULE", None, ["calcium channel blocker", "antihypertensive", "CYP3A4 inhibitor", "CYP3A inhibitor"]),
     "lisinopril": ("LISINOPRIL", None, "TABLET", "HYDROCHLOROTHIAZIDE", ["ACE inhibitor", "antihypertensive"]),
     "losartan": ("LOSARTAN POTASSIUM", None, "TABLET", "HYDROCHLOROTHIAZIDE",
                  ["angiotensin receptor blocker", "ARB", "antihypertensive"]),
@@ -80,17 +80,38 @@ CURATED = {
     "omeprazole": ("OMEPRAZOLE", None, "CAPSULE, DELAYED RELEASE", "SODIUM BICARBONATE", ["proton pump inhibitor", "PPI"]),
     "levothyroxine": ("SYNTHROID", "ABBVIE", None, None, ["thyroid hormone"]),
     "prednisone": ("PREDNISONE", None, None, None, ["corticosteroid"]),
-    "clarithromycin": ("CLARITHROMYCIN", None, "TABLET", None, ["macrolide"]),
+    "clarithromycin": ("CLARITHROMYCIN", None, "TABLET", None, ["macrolide", "CYP3A4 inhibitor", "CYP3A inhibitor"]),
     "azithromycin": ("ZITHROMAX", "PFIZER", None, None, ["macrolide"]),
     "ciprofloxacin": ("CIPROFLOXACIN", None, "TABLET", "OTIC", ["fluoroquinolone", "quinolone"]),
     "amoxicillin": ("AMOXICILLIN", None, "CAPSULE", "CLAVULANATE", ["penicillin"]),
-    "fluconazole": ("DIFLUCAN", None, None, None, ["azole antifungal"]),
+    "fluconazole": ("DIFLUCAN", None, None, None, ["azole antifungal", "CYP3A4 inhibitor", "CYP3A inhibitor"]),
+    # more of what older patients take: memory, prostate/bladder, bones, gout, Parkinson's, sleep
+    "donepezil": ("ARICEPT", "EISAI", None, None, ["cholinesterase inhibitor"]),
+    "memantine": ("NAMENDA", None, "TABLET", "XR", ["NMDA receptor antagonist"]),
+    "tamsulosin": ("FLOMAX", None, None, None, ["alpha blocker", "alpha-adrenergic antagonist"]),
+    "oxybutynin": ("OXYBUTYNIN CHLORIDE", None, "TABLET", None, ["anticholinergic", "antimuscarinic"]),
+    "alendronate": ("FOSAMAX", None, None, "PLUS", ["bisphosphonate"]),
+    "allopurinol": ("ALLOPURINOL", None, "TABLET", None, ["xanthine oxidase inhibitor"]),
+    "colchicine": ("COLCRYS", None, None, None, []),
+    "levodopa": ("SINEMET", None, None, None, ["dopamine agonist", "levodopa"]),
+    "hydrochlorothiazide": ("HYDROCHLOROTHIAZIDE", None, "TABLET", None, ["thiazide diuretic", "diuretic", "antihypertensive"]),
+    "carvedilol": ("COREG", None, "TABLET", "CR", ["beta-blocker", "beta blocker", "antihypertensive"]),
+    "meloxicam": ("MELOXICAM", None, "TABLET", None, ["NSAID", "nonsteroidal anti-inflammatory drug"]),
+    "trazodone": ("TRAZODONE HYDROCHLORIDE", None, "TABLET", None, ["antidepressant", "CNS depressant"]),
+    "mirtazapine": ("MIRTAZAPINE", None, "TABLET", "ORALLY", ["antidepressant", "CNS depressant"]),
+    "zolpidem": ("AMBIEN", None, None, "CR", ["hypnotic", "CNS depressant"]),
+    "pantoprazole": ("PROTONIX", None, "TABLET", None, ["proton pump inhibitor", "PPI"]),
 }
 # common drugs with no label loaded (OTC monographs use another layout): still matched by name and class
 # when another drug's label talks about them
-UNLOADED = {"ibuprofen": ["NSAID"], "naproxen": ["NSAID"], "acetaminophen": [], "ketoconazole": ["azole antifungal"],
-            "itraconazole": ["azole antifungal"], "erythromycin": ["macrolide"], "rifampin": [], "verapamil":
-            ["calcium channel blocker"], "potassium chloride": ["potassium supplement"], "grapefruit": []}
+CYP3A = ["CYP3A4 inhibitor", "CYP3A inhibitor"]
+UNLOADED = {"ibuprofen": ["NSAID"], "naproxen": ["NSAID"], "acetaminophen": [], "ketoconazole": ["azole antifungal", *CYP3A],
+            "itraconazole": ["azole antifungal", *CYP3A], "erythromycin": ["macrolide", *CYP3A], "rifampin": ["CYP3A4 inducer"],
+            "verapamil": ["calcium channel blocker", *CYP3A], "potassium chloride": ["potassium supplement"], "grapefruit": []}
+
+# classes that describe what a drug does to the body, not what it is: two drugs sharing one is the interaction
+EFFECT_CLASSES = {"cns depressant", "antihypertensive", "diuretic", "antidiabetic", "hypoglycemic agent", "anticoagulant",
+                  "antiplatelet", "nsaid"}  # not "antidepressant": every one carries the same boxed warning about itself
 
 # LOINC section code -> key. Anything else is 'other', kept but not embedded.
 SECTION_KEYS = {
@@ -440,7 +461,8 @@ PATHWAYS = [(d, role, mech, strength, src) for mech, role, strength, src, drugs 
     ("CYP3A4", "inhibits", "weak", FDA_CYP, "amlodipine"),
     ("CYP3A4", "induces", "strong", FDA_CYP, "rifampin"),
     ("CYP3A4", "substrate", "sensitive", FDA_CYP, "simvastatin, quetiapine"),
-    ("CYP3A4", "substrate", "moderately sensitive", FDA_CYP, "atorvastatin, apixaban, rivaroxaban, oxycodone, alprazolam"),
+    ("CYP3A4", "substrate", "moderately sensitive", FDA_CYP, "atorvastatin, apixaban, rivaroxaban, oxycodone, alprazolam, zolpidem, tamsulosin"),
+    ("CYP3A4", "substrate", "narrow therapeutic index", FDA_CYP, "colchicine"),
     ("CYP2C9", "inhibits", "moderate", FDA_CYP, "fluconazole, amiodarone"),
     ("CYP2C9", "induces", "moderate", FDA_CYP, "rifampin"),
     ("CYP2C9", "substrate", "narrow therapeutic index", FDA_CYP, "warfarin"),
@@ -448,23 +470,24 @@ PATHWAYS = [(d, role, mech, strength, src) for mech, role, strength, src, drugs 
     ("CYP2C19", "inhibits", "moderate", FDA_CYP, "omeprazole"),
     ("CYP2C19", "substrate", "moderately sensitive", FDA_CYP, "clopidogrel, citalopram"),
     ("CYP2D6", "inhibits", "strong", FDA_CYP, "fluoxetine"),
-    ("CYP2D6", "substrate", "moderately sensitive", FDA_CYP, "metoprolol, tramadol, oxycodone"),
+    ("CYP2D6", "substrate", "moderately sensitive", FDA_CYP, "metoprolol, tramadol, oxycodone, tamsulosin"),
     ("P-gp", "inhibits", "moderate", FDA_CYP, "verapamil, amiodarone, clarithromycin, itraconazole, ketoconazole"),
     ("P-gp", "induces", "moderate", FDA_CYP, "rifampin"),
-    ("P-gp", "substrate", "narrow therapeutic index", FDA_CYP, "digoxin"),
+    ("P-gp", "substrate", "narrow therapeutic index", FDA_CYP, "digoxin, colchicine"),
     ("QT prolongation", "adds", "strong", CREDIBLEMEDS, "amiodarone"),
     ("QT prolongation", "adds", "moderate", CREDIBLEMEDS, "citalopram, clarithromycin, erythromycin, fluconazole, ciprofloxacin"),
     ("QT prolongation", "adds", "weak", CREDIBLEMEDS, "azithromycin, quetiapine"),
-    ("serotonergic activity", "adds", "moderate", PD, "fluoxetine, citalopram, sertraline, tramadol"),
+    ("serotonergic activity", "adds", "moderate", PD, "fluoxetine, citalopram, sertraline, tramadol, trazodone"),
     ("bleeding", "adds", "strong", PD, "warfarin, apixaban, rivaroxaban, clopidogrel"),
-    ("bleeding", "adds", "moderate", PD, "aspirin, ibuprofen, naproxen"),
+    ("bleeding", "adds", "moderate", PD, "aspirin, ibuprofen, naproxen, meloxicam"),
+    ("serotonergic activity", "adds", "weak", PD, "mirtazapine"),
     ("bleeding", "adds", "weak", PD, "fluoxetine, citalopram, sertraline"),
     ("high potassium", "adds", "strong", PD, "spironolactone, potassium chloride"),
     ("high potassium", "adds", "moderate", PD, "lisinopril, losartan"),
     ("CNS depression", "adds", "strong", PD, "oxycodone, alprazolam"),
-    ("CNS depression", "adds", "moderate", PD, "tramadol, gabapentin, quetiapine"),
+    ("CNS depression", "adds", "moderate", PD, "tramadol, gabapentin, quetiapine, trazodone, mirtazapine, zolpidem"),
     ("low blood sugar", "adds", "moderate", PD, "insulin glargine"),
-    ("myopathy", "adds", "moderate", PD, "simvastatin, atorvastatin, rosuvastatin, pravastatin"),
+    ("myopathy", "adds", "moderate", PD, "simvastatin, atorvastatin, rosuvastatin, pravastatin, colchicine"),
 ] for d in drugs.split(", ")]
 PRODRUGS = {("clopidogrel", "CYP2C19"): "clopidogrel needs CYP2C19 to become active: less active drug, less platelet inhibition",
             ("tramadol", "CYP2D6"): "tramadol needs CYP2D6 for its active metabolite: less pain relief"}
@@ -515,30 +538,52 @@ def _terms(drug: str, label: dict | None) -> tuple[list[str], list[str]]:
     return [drug], UNLOADED.get(drug) or (CURATED[drug][4] if drug in CURATED else [])
 
 
+INTERACT = re.compile(r"concomitant|co-?administ|combin|together|with other|in patients (taking|receiving|treated with)|"
+                      r"interact|potentiat|add to|increase[sd]? the|decrease[sd]? the|inhibitor|inducer|avoid|"
+                      r"contraindicated|monitor|caution|risk of|dosage adjustment|reduce the dose", re.I)
+
+
+def _heading(p: str) -> bool:  # "7.3 Warfarin" or a table cell
+    return len(p) < 40 or bool(re.match(r"^\d+(\.\d+)*\s", p) and len(p) < 90)
+
+
+def _quote(parts: list[str], i: int) -> str:
+    """The sentence to show for a match in parts[i]: a heading takes the sentence under it, a table cell its caption."""
+    p = parts[i]
+    if _heading(p) and i + 1 < len(parts):
+        return f"{p}: {parts[i + 1]}"
+    if not re.search(r"[.!?:]$", p):  # a table cell ("aspirin, cilostazol, ..."): say which table
+        caption = next((x for x in reversed(parts[:i]) if re.match(r"Table \d+", x)), None)
+        if caption:
+            return f"{caption.rstrip('.')}: … {p}"
+    return p
+
+
 def _mention(a: dict, b_drug: str, b_label: dict | None, docs: list[dict]) -> dict | None:
     """The first sentence in a's interaction sections naming b (by name, brand or class), most serious section first."""
     names, classes = _terms(b_drug, b_label)
-    same_class = set(c.lower() for c in classes) & set(c.lower() for c in a["classes"])  # "statins" in a statin label
+    # "statins" in a statin label is about itself, so a class both drugs belong to doesn't count, unless it's an
+    # effect class: "other CNS depressants" in an opioid label is exactly the warning about a sleeping pill
+    own = {c.lower() for c in a["classes"]} - EFFECT_CLASSES
+    classes = [c for c in classes if c.lower() not in own]
     by_name = re.compile(r"\b(" + "|".join(map(re.escape, names)) + r")\b", re.I)
     by_class = (re.compile(r"\b(" + "|".join(map(re.escape, classes)) + r")s?\b", re.I)
-                if classes and not same_class else None)
+                if classes else None)
     for d in sorted((d for d in docs if d["label_id"] == a["id"]), key=lambda d: MENTION_SECTIONS.index(d["section"])):
         parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+|\n+", d["content"]) if p.strip()]
-        hits = [(i, p, m) for i, p in enumerate(parts) if (m := by_name.search(p) or (by_class and by_class.search(p)))]
-        if not hits:
+        found = []  # (quote, match, by name?) in label order
+        for i, p in enumerate(parts):
+            m = by_name.search(p) or (by_class.search(p) if by_class else None)
+            if m:
+                found.append((_quote(parts, i), m, by_name.search(p) is not None))
+        # a drug's name is the signal itself; a class word only counts in a sentence about using drugs together
+        # (sertraline's "SSRIs" also appears in every antidepressant's suicidality warning)
+        usable = [f for f in found if f[2] or INTERACT.search(f[0])]
+        if not usable:
             continue
-
-        def heading(p):  # "7.3 Warfarin" or a table cell: quote the sentence under it
-            return len(p) < 40 or (re.match(r"^\d+(\.\d+)*\s", p) and len(p) < 90)
-        i, p, m = next((h for h in hits if not heading(h[1])), hits[0])
-        if heading(p) and i + 1 < len(parts):
-            p = f"{p}: {parts[i + 1]}"
-        elif not re.search(r"[.!?:]$", p):  # a table cell ("aspirin, cilostazol, ..."): say which table
-            caption = next((x for x in reversed(parts[:i]) if re.match(r"Table \d+", x)), None)
-            if caption:
-                p = f"{caption.rstrip('.')}: … {p}"
-        return {"label_of": a["drug"], "names": b_drug, "matched": m.group(0), "by": "name" if by_name.search(p) else "class",
-                "section": d["section"], "section_title": d["title"], "sentence": p if len(p) <= 400 else p[:397] + "…",
+        q, m, named = next((f for f in usable if not _heading(f[0])), usable[0])
+        return {"label_of": a["drug"], "names": b_drug, "matched": m.group(0), "by": "name" if named else "class",
+                "section": d["section"], "section_title": d["title"], "sentence": q if len(q) <= 400 else q[:397] + "…",
                 "label": a["title"], "setid": a["setid"], "version": a["version"], "effective": a["effective"]}
     return None
 
