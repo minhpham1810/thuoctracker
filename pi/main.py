@@ -160,10 +160,11 @@ class Esp32:
 
 
 def _find_esp32() -> str:
-    # CircuitPython's data port is USB interface 2 (the console is interface 0)
-    ports = sorted(glob.glob("/dev/serial/by-id/*-if02*"))
+    # CircuitPython opens two serial ports: the console is interface 00, the data port (boot.py) comes after it
+    ports = sorted(p for p in glob.glob("/dev/serial/by-id/*-if*") if not p.endswith("-if00"))
     if not ports:
-        raise RuntimeError("ESP32 not found: plug it into a black USB port, or set ESP32_PORT")
+        raise RuntimeError("ESP32 data port not found: plug it into a black USB port and press its RESET "
+                           "(boot.py opens the port), or set ESP32_PORT")
     return ports[0]
 
 

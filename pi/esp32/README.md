@@ -28,7 +28,8 @@ python pi/main.py esp32 rec 3           # records 3 s, saves /tmp/question.wav
 python pi/main.py esp32 ask             # records a question, plays the answer
 ```
 
-The Pi finds the board's data port by itself (`/dev/serial/by-id/*-if02`). If it doesn't,
-set `ESP32_PORT=/dev/ttyACM1` in `pi/.env`.
+The Pi finds the board's data port by itself: the board's second entry in `/dev/serial/by-id/`
+(the first, `-if00`, is the console). Only one entry means `boot.py` hasn't run: press RESET
+(copying files or Ctrl+D doesn't run it). Or set `ESP32_PORT=/dev/ttyACM1` in `pi/.env`.
 
 Wiring (matches the mic + speaker test): amp BCLK 5, LRC 6, DIN 9; mic SCK 11, WS 12, SD 10.
