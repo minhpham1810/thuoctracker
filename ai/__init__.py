@@ -100,7 +100,9 @@ def _why(e: Exception) -> str:
 
 def _ollama(messages: list[dict], model: str = OLLAMA_MODEL, format=None, timeout: int = 60) -> str:
     body = {"model": model, "messages": messages, "stream": False, "think": False,
-            "keep_alive": -1,  # never unload: after "1h" idle, the next question waited ~30 s for a reload
+            # voice model never unloads (after "1h" idle, the next question waited ~30 s for a reload). Others (a
+            # label model like gemma4:12b-mlx) go after 5 min: both pinned took 27.5 GB on a 24 GB Mac.
+            "keep_alive": -1 if model == OLLAMA_MODEL else "5m",
             "options": {"temperature": 0}}
     if format:
         body["format"] = format  # JSON schema: Ollama constrains the output to it
