@@ -38,16 +38,19 @@ export default function DrugLabels({ patientId, meds }: { patientId: number; med
   const [checkError, setCheckError] = useState("");
   const [adding, setAdding] = useState("");
   const [added, setAdded] = useState("");
+  const [busy, setBusy] = useState(false);
   const names = meds.map((m) => m.name).join("|"); // reload when the medicines change, not on every poll
 
   const load = useCallback(async (add: string) => {
     setCheckError("");
+    setBusy(true);
     try {
       setCheck(await api<Check>(`/patients/${patientId}/interactions${add ? `?add=${encodeURIComponent(add)}` : ""}`));
       setAdded(add);
     } catch (e) {
       setCheckError(e instanceof Error ? e.message : "Couldn't check the labels");
     }
+    setBusy(false);
   }, [patientId]);
 
   useEffect(() => {
@@ -57,7 +60,11 @@ export default function DrugLabels({ patientId, meds }: { patientId: number; med
 
   const found = check?.pairs.filter((p) => p.label_says.length || p.pathways.length) ?? [];
   const nothing = check?.pairs.filter((p) => !p.label_says.length && !p.pathways.length) ?? [];
-  const noLabel = check?.medicines.filter((m) => !m.label) ?? [];
+  // the drug typed in "Check": missing from the list when it's one the patient already takes (same drug, any name)
+  const addedMed = added && !meds.some((m) => m.name === added) ? check?.medicines.find((m) => m.name === added) : undefined;
+  const addedHits = addedMed ? found.filter((p) => p.drugs.includes(addedMed.drug)) : [];
+  const others = meds.map((m) => m.name).join(meds.length > 2 ? ", " : " or ");
+  const noLabel = check?.medicines.filter((m) => !m.label && m !== addedMed) ?? [];
 
   return (
     <section className="block labels" aria-labelledby="labels-h">
@@ -71,7 +78,7 @@ export default function DrugLabels({ patientId, meds }: { patientId: number; med
           <span>Check a drug you&apos;re considering <small>against this patient&apos;s medicines</small></span>
           <input value={adding} onChange={(e) => setAdding(e.target.value)} placeholder="e.g. clarithromycin" />
         </label>
-        <button type="submit" className="btn">Check</button>
+        <button type="submit" className="btn" disabled={busy || !adding.trim()}>{busy ? "Checking…" : "Check"}</button>
         {added && (
           <button type="button" className="btn btn-quiet" onClick={() => { setAdding(""); load(""); }}>
             <Icon name="close" /> Clear
@@ -82,6 +89,14 @@ export default function DrugLabels({ patientId, meds }: { patientId: number; med
       {checkError && <p className="form-error" role="alert">{checkError}</p>}
       {check && (
         <div aria-live="polite">
+          {added && (
+            <p className={`labels-result${addedHits.length ? " hit" : ""}`} role="status">
+              {!addedMed ? <><b>{cap(added)}</b> is already one of this patient&apos;s medicines.</>
+                : addedHits.length ? <>Found <b>{addedHits.length}</b> {addedHits.length === 1 ? "thing" : "things"} to know about <b>{cap(addedMed.drug)}</b> with {others}, below.</>
+                : addedMed.label ? <>Nothing found between <b>{cap(addedMed.drug)}</b> and {others}: their FDA labels don&apos;t name each other and there&apos;s no known pathway. That is not proof the combination is safe.</>
+                : <>No FDA label is loaded for <b>&ldquo;{added}&rdquo;</b>, and the labels of {others} don&apos;t mention it. Check the spelling, or try the generic name (ibuprofen, not Advil).</>}
+            </p>
+          )}
           {meds.length < 2 && !added ? (
             <p className="empty">Interactions need at least two medicines. Add one, or check a drug you&apos;re considering.</p>
           ) : found.length ? (
@@ -89,7 +104,7 @@ export default function DrugLabels({ patientId, meds }: { patientId: number; med
               {found.map((p) => (
                 <li key={p.drugs.join("+")} className={`pair tone-${tone(p)}`}>
                   <h4>
-                    {p.drugs.map((d) => <span key={d} className={d === added.toLowerCase() ? "considered" : undefined}>{cap(d)}</span>)}
+                    {p.drugs.map((d) => <span key={d} className={d === addedMed?.drug ? "considered" : undefined}>{cap(d)}</span>)}
                   </h4>
                   {p.label_says.map((s) => (
                     <blockquote key={s.label_of}>
@@ -107,7 +122,7 @@ export default function DrugLabels({ patientId, meds }: { patientId: number; med
                 </li>
               ))}
             </ul>
-          ) : (
+          ) : !added && (
             <p className="empty">The loaded labels don&apos;t name any of these medicines together.</p>
           )}
           {nothing.length > 0 && found.length > 0 && (

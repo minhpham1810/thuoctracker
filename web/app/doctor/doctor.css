@@ -486,3 +486,5 @@
 .label-warnings b { color: var(--warn); }
 .label-warnings .icon { width: 16px; height: 16px; color: var(--warn); vertical-align: -3px; }
 .label-warnings small { color: var(--ink-2); margin-left: 4px; }
+.labels-result { margin-top: 14px !important; padding: 12px 14px; border-radius: var(--r-ctl); background: var(--paper); border: 1px solid var(--line); font-size: 14px; }
+.labels-result.hit { border-color: var(--teal); background: var(--teal-wash); }
