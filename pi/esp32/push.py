@@ -27,16 +27,31 @@ def console_port() -> str:
     return ports[0]
 
 
+def raw_repl(link: serial.Serial):
+    """Stop code.py, step past "Press any key to enter the REPL", enter the raw REPL. A few tries:
+    the board may still be starting up (boot.py waits 2 s for the BOOT button)."""
+    seen = b""
+    for _ in range(3):
+        link.write(b"\r\x03")
+        time.sleep(0.5)
+        link.write(b"\x03")  # a second one, in case the first landed while code.py was busy
+        time.sleep(1)
+        link.write(b"\r")
+        time.sleep(1)
+        seen = link.read(link.in_waiting)
+        link.write(b"\x01")
+        got = link.read_until(b"CTRL-B to exit\r\n>")
+        if got.endswith(b">"):
+            return
+        seen += got
+    sys.exit("No REPL on the ESP32's console. It said:\n"
+             + seen.decode(errors="replace")[-600:]
+             + "\n(Nothing at all: press RESET, wait 5 s, try again.)")
+
+
 def main(names: list[str]):
-    link = serial.Serial(console_port(), 115200, timeout=3)
-    # stop code.py, step past "press any key", then enter the raw REPL
-    for key in (b"\x03", b"\x03", b"\r"):
-        link.write(key)
-        time.sleep(0.4)
-    link.reset_input_buffer()
-    link.write(b"\x01")
-    if not link.read_until(b"raw REPL; CTRL-B to exit\r\n>").endswith(b">"):
-        sys.exit("No REPL on the console port. Press RESET on the ESP32 and try again.")
+    link = serial.Serial(console_port(), 115200, timeout=4)
+    raw_repl(link)
 
     def run(code: str):
         link.write(code.encode() + b"\x04")
