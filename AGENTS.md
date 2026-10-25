@@ -36,6 +36,7 @@ The team coordinates through the repo, not the group chat. Who owns what and the
 - Expiration within 7 days -> `expiring_soon` alert to family and doctor.
 - Same dose opened twice -> screen warning "You already took this one."
 - Taken = camera count before minus after is exactly 1.
+- Patient app "Did you take your pill?" popup: Yes / Not yet (asks again in 30 min) for due or missed doses, up to 3 h after the pill's time; it asks, never says "take it now". Yes on a missed dose = taken late, push to family + doctor.
 - Appointments: the doctor opens times; the patient or their family books (one conditional UPDATE, never two bookings for one time); patients never see others' bookings; "Appointment soon" push to patient + family 1 h before.
 
 ## Commands

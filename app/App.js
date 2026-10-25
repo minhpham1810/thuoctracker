@@ -8,6 +8,7 @@ import { useNotifyNew, usePoll } from './src/hooks';
 import Login from './src/Login';
 import { onBanner, setupNotifications } from './src/notify';
 import PatientView from './src/PatientView';
+import PillCheck from './src/PillCheck';
 import Schedule from './src/Schedule';
 import People from './src/People';
 import { clearSession, loadSession, saveSession } from './src/session';
@@ -100,6 +101,7 @@ export default function App() {
           </View>
         )}
         {user && <Watcher user={user} />}
+        {user?.role === 'patient' && <PillCheck user={user} />}
         <View style={{ flex: 1 }}>{body}</View>
         <Banner />
         <StatusBar style="dark" />

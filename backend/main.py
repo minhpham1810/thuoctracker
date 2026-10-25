@@ -321,6 +321,12 @@ def mark_taken(dose: DoseLog, method: Literal["camera", "screen"]) -> DoseLog:
     drop_door_commands(m.patient_id, dose.id)
     set_state(m.patient_id, "taken", dose, m, "Good job!")
     say(m.patient_id, dose, "Good job!", "good_job")
+    if dose.status == "missed":  # family and doctor were told it was missed: tell them it was taken after all
+        p = get_patient(m.patient_id)
+        due = f"{dose.due_at:%H:%M}" if dose.due_at.date() == date.today() else f"{dose.due_at:%b} {dose.due_at.day}, {dose.due_at:%H:%M}"
+        text = f"{p.name} took {m.name} ({due}) late, at {datetime.now():%H:%M}."
+        push_to("family", p, "Taken late", text)
+        push_to("doctor", p, "Taken late", text)
     return DoseLog(**row)
 
 
