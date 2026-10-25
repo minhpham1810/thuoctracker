@@ -699,11 +699,13 @@ def ask(patient_id: int, audio: UploadFile = File(...)):
     # no transcript (Ollama down, model not pulled, audio not WAV): say sorry, never answer a question nobody asked
     question = try_ai(ai.transcribe, audio.file.read(), fallback=None)
     text = sorry if question is None else try_ai(ai.answer, question, dose_log(patient_id), fallback=sorry)
-    # the screen shows it when the question came through the cabinet's mic (GET /cabinet/{id}/answer)
+    audio_url = speech_url(text)
+    # the screen shows it when the question came through the cabinet's mic (GET /cabinet/{id}/answer).
+    # Saved only once the voice exists, so the text doesn't appear seconds before the cabinet speaks.
     q("INSERT INTO cabinet_answer (patient_id, text, at) VALUES (%s, %s, %s)"
       " ON CONFLICT (patient_id) DO UPDATE SET text = EXCLUDED.text, at = EXCLUDED.at",
       patient_id, text, datetime.now())
-    return {"text": text, "audio_url": speech_url(text)}
+    return {"text": text, "audio_url": audio_url}
 
 
 # --- Cabinet (login-free: the Pi and its touchscreen) ---------------------------

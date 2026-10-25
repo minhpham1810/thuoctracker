@@ -35,6 +35,9 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:e4b-mlx")
 # reuse the loaded model (MLX runs only on Apple Silicon; Windows pulls the regular gemma4:e4b).
 VISION_MODELS = ("gemma4", "qwen2.5vl", "llama3.2-vision", "minicpm-v", "llava")
 VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")  # "Rachel", a calm default voice
+# flash: a one-sentence answer in ~0.75 s vs ~1.6-2 s for eleven_multilingual_v2 (measured 2026-10-25),
+# so the cabinet speaks right after the answer is ready
+VOICE_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_flash_v2_5")
 DONT_KNOW = "I don't know, please ask your doctor."
 DIDNT_HEAR = "Sorry, I didn't hear a question. Please try again."
 
@@ -245,6 +248,6 @@ def speak(text: str) -> bytes:
     r = requests.post(
         f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}",
         headers={"xi-api-key": os.environ["ELEVENLABS_API_KEY"], "accept": "audio/mpeg"},
-        json={"text": text, "model_id": "eleven_multilingual_v2"}, timeout=30)
+        json={"text": text, "model_id": VOICE_MODEL}, timeout=30)
     r.raise_for_status()
     return r.content

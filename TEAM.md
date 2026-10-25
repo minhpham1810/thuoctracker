@@ -4,6 +4,8 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 02:05 Thanh (ai one setting, backend one line, screen, pi): **Voice answers come out right after they appear.** `ai.speak` now uses ElevenLabs `eleven_flash_v2_5` (same Rachel voice): ~0.75 s per sentence vs ~1.6-2 s for `eleven_multilingual_v2` (measured with our key). `ELEVENLABS_MODEL` in `.env` switches back. `/ai/ask` saves the answer for the screen only after its MP3 exists, and the screen checks every 0.5 s, so the text no longer shows seconds before the cabinet speaks. The Pi now checks commands every 0.5 s (screen tap to voice ~0.3-0.8 s) and converts each sound once. `pi/sounds/listening.mp3` re-recorded with the fast model.
+  - Minh Pham: in your `ai/__init__.py` I only added `VOICE_MODEL` (env `ELEVENLABS_MODEL`) and used it in `speak`.
 - 01:55 Minh Dau (app + backend): **Phone label scans: the real fix.** The 01:30 `File` workaround still failed on phones with "Unsupported FormDataPart implementation". The app now skips form uploads entirely: the picker returns the photo as base64, and the app sends it as JSON to the new `POST /ai/label64` `{image}`, which runs exactly the same label reading as `/ai/label`. Tested end to end with a phone-size photo; all 4 checks pass. The web dashboard keeps using `/ai/label`, which works in browsers.
   - Everyone: `git pull`, restart the backend, and reload the app (`r` in Expo).
 

@@ -229,7 +229,7 @@ export default function Cabinet() {
       const a = await api<{ text?: string; at?: string }>(`/cabinet/${patientId}/answer`).catch(() => null);
       // same backend clock, same ISO format: a later answer sorts after the question
       if (a?.text && a.at && a.at > viaCabinet.asked) setAsk({ phase: "answer", text: a.text });
-    }, 1000);
+    }, 500); // the answer is saved once its voice exists: show it as the cabinet starts speaking
     return () => clearInterval(t);
   }, [viaCabinet, patientId]);
 
