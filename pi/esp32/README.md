@@ -12,9 +12,12 @@ talks to it when `AUDIO=esp32` is set in `pi/.env`.
    `time_for_pill.wav`, `good_job.wav`, `already_took.wav`, `missed.wav`.
    Convert an MP3 with: `mpg123 -m -r 16000 -e s16 -w good_job.wav good_job.mp3`
 4. Press RESET. From now on the `CIRCUITPY` drive is hidden: the S3 has too few USB endpoints
-   for the drive plus the Pi's data port, and `code.py` needs to write the spoken answers.
-   **To edit files again, hold BOOT while pressing RESET** (the drive comes back, the Pi's port
-   is off until the next plain RESET).
+   for the drive plus the Pi's data port.
+   **To update files later, from the Pi:** `.venv/bin/python pi/esp32/push.py code.py` (or
+   `boot.py code.py`). It copies over the console port; no buttons, no drive.
+   To get the drive back instead: press RESET, let go, then press BOOT within 2 seconds.
+   **Never hold BOOT while pressing RESET**: that starts the chip's USB bootloader (it shows up as
+   "Espressif USB JTAG serial debug unit"); press RESET alone to leave it.
 5. Optional talk button: wire a push button between a free pin and GND, and set `BUTTON_PIN`
    in `code.py` (e.g. `pin.GPIO4`).
 
