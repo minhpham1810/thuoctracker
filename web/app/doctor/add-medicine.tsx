@@ -4,8 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/icon";
 import { api, LONG_SLOT, PILL_COLOR_NAMES, pillColor, SLOTS, type LabelDraft, type Medicine, type Patient } from "@/lib/api";
 
-const TIMES = /^\s*\d{2}:\d{2}(\s*,\s*\d{2}:\d{2})*\s*$/;
-
 // Add: label photo -> /ai/label draft -> doctor checks it -> POST /medicines.
 // Edit (med given): same form prefilled -> PATCH /medicines/{id}; refill = change "Pills in the box".
 // slot: the empty box the doctor clicked
@@ -15,11 +13,11 @@ export default function AddMedicine({ patient, meds, med, slot, onClose, onSaved
   const dialog = useRef<HTMLDialogElement>(null);
   const freeSlots = SLOTS.filter((s) => s === med?.slot || !meds.some((m) => m.slot === s));
   const [form, setForm] = useState(med ? {
-    name: med.name, dose: med.dose, times: med.times.join(", "), slot: String(med.slot),
+    name: med.name, dose: med.dose, times: med.times, slot: String(med.slot),
     pills_left: String(med.pills_left), expiration: med.expiration, color: med.color,
   } : {
     // empty, not example values: anything filled in must come from the label or the doctor
-    name: "", dose: "", times: "", slot: String(slot ?? freeSlots[0] ?? ""), pills_left: "", expiration: "", color: "blue",
+    name: "", dose: "", times: [""], slot: String(slot ?? freeSlots[0] ?? ""), pills_left: "", expiration: "", color: "blue",
   });
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [note, setNote] = useState<{ text: string; ai?: boolean }>({ text: "Or type it in below." });
@@ -31,6 +29,7 @@ export default function AddMedicine({ patient, meds, med, slot, onClose, onSaved
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
+  const setTimes = (fn: (t: string[]) => string[]) => setForm((f) => ({ ...f, times: fn(f.times) }));
 
   async function readLabel(file: File) {
     setReading(true);
@@ -44,7 +43,7 @@ export default function AddMedicine({ patient, meds, med, slot, onClose, onSaved
       setForm((f) => ({
         ...f,
         name: d.name ?? f.name, dose: d.dose ?? f.dose,
-        times: d.times?.join(", ") ?? f.times, expiration: d.expiration ?? f.expiration,
+        times: d.times?.length ? d.times : f.times, expiration: d.expiration ?? f.expiration,
         pills_left: d.quantity != null ? String(d.quantity) : f.pills_left,
       }));
       const missing = (["name", "dose", "times", "expiration", "quantity"] as const).filter((k) => d[k] == null)
@@ -64,7 +63,6 @@ export default function AddMedicine({ patient, meds, med, slot, onClose, onSaved
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    if (!TIMES.test(form.times)) return setError("Times must look like 08:00, 20:00.");
     setSaving(true);
     setError("");
     try {
@@ -75,7 +73,7 @@ export default function AddMedicine({ patient, meds, med, slot, onClose, onSaved
           patient_id: patient.id,
           name: form.name.trim(),
           dose: form.dose.trim(),
-          times: form.times.split(",").map((t) => t.trim()),
+          times: [...new Set(form.times)].sort(), // "HH:MM" from the time inputs, so text order is time order
           slot: Number(form.slot),
           pills_left: Number(form.pills_left),
           expiration: form.expiration,
@@ -138,9 +136,26 @@ export default function AddMedicine({ patient, meds, med, slot, onClose, onSaved
               <label className="field">Dose
                 <input value={form.dose} onChange={set("dose")} required placeholder="e.g. 1 pill" />
               </label>
-              <label className="field">Times <small>24-hour, separated by commas</small>
-                <input value={form.times} onChange={set("times")} required placeholder="e.g. 08:00, 20:00" />
-              </label>
+              <div className="field full" role="group" aria-labelledby="times-label">
+                <span id="times-label">Times <small>When the pill is taken each day</small></span>
+                <div className="times">
+                  {form.times.map((t, i) => (
+                    <span className="time-row" key={i}>
+                      <input type="time" value={t} required aria-label={`Time ${i + 1}`}
+                        onChange={(e) => setTimes((ts) => ts.map((x, j) => (j === i ? e.target.value : x)))} />
+                      {form.times.length > 1 && (
+                        <button className="btn btn-quiet btn-icon" type="button" aria-label={`Remove time ${i + 1}`}
+                          onClick={() => setTimes((ts) => ts.filter((_, j) => j !== i))}>
+                          <Icon name="close" />
+                        </button>
+                      )}
+                    </span>
+                  ))}
+                  <button className="btn btn-quiet btn-sm" type="button" onClick={() => setTimes((ts) => [...ts, ""])}>
+                    <Icon name="plus" /> Add a time
+                  </button>
+                </div>
+              </div>
               <label className="field">Pills in the box
                 <input type="number" min={0} max={999} value={form.pills_left} onChange={set("pills_left")} required placeholder="e.g. 30" />
               </label>

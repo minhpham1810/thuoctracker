@@ -595,3 +595,7 @@
 .seg .icon { width: 18px; height: 18px; }
 .seg .aa { font-weight: 700; line-height: 1; }
 .display-note { color: var(--ink-2); font-size: calc(12px * var(--fs)); }
+
+/* Times in the add-medicine form: one time input per dose */
+.times { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.time-row { display: flex; align-items: center; gap: 2px; }
