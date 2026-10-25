@@ -585,9 +585,11 @@ def login_auth0(access_token: str = Body(embed=True), new_doctor: bool = Body(Tr
     email = (info.get("email") or "").strip().lower()
     if "@" not in email:
         raise HTTPException(400, "Your Auth0 account has no email")
-    # dashboard: a new email gets a doctor account, the same as its /signup
-    row = new_doctor and q1("INSERT INTO users (email, name, role) VALUES (%s, %s, 'doctor') ON CONFLICT DO NOTHING RETURNING *",
-                            email, (info.get("name") or email).strip())
+    # dashboard: a new email gets a doctor account, the same as its /signup. A random password nobody knows:
+    # NULL would get the demo password on the next start (lifespan), opening the account to anyone
+    row = new_doctor and q1("INSERT INTO users (email, name, role, password_hash) VALUES (%s, %s, 'doctor', %s)"
+                            " ON CONFLICT DO NOTHING RETURNING *",
+                            email, (info.get("name") or email).strip(), hash_password(secrets.token_urlsafe(32)))
     if not row:
         row = find_email(email)
         if not row:  # the app: patients and family need more than an email, so they sign up there first

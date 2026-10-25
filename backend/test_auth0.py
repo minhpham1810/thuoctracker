@@ -42,6 +42,8 @@ try:
     q("DELETE FROM users WHERE email = %s", email)
     u = auth0_login(email=email.upper(), name="Dr. Test", email_verified=False)
     assert (u.role, u.email, u.name) == ("doctor", email, "Dr. Test")  # new email: a new doctor account
+    assert not main.check_password(main.DEMO_PASSWORD, main.find_email(email)["password_hash"])  # not the demo password
+    assert main.find_email(email)["password_hash"]  # never NULL: the next start would set the demo password
     assert auth0_login(email=email, email_verified=False) == 401       # existing account, unverified: no takeover
     assert auth0_login(email=email, email_verified=True).id == u.id    # verified: logs into that account
     assert auth0_login(name="No email") == 400
