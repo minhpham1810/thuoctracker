@@ -8,6 +8,9 @@ import { Button, Card, colors, Dot, Title } from './ui';
 const ImagePicker = Platform.OS === 'web' || requireOptionalNativeModule('ExponentImagePicker')
   ? require('expo-image-picker')
   : null;
+// SDK 58's fetch rejects React Native's old {uri, name, type} form parts ("Unsupported FormDataPart
+// implementation"); expo-file-system's File is a Blob, which it accepts.
+const FsFile = Platform.OS !== 'web' && requireOptionalNativeModule('FileSystem') ? require('expo-file-system').File : null;
 
 const SLOTS = [1, 2, 3, 4, 5, 6, 7]; // boxes 1-3 top row, 4-6 middle row, 7 the long bottom box
 const COLORS = ['white', 'blue', 'red', 'yellow', 'green', 'orange', 'pink', 'purple'];
@@ -22,7 +25,8 @@ export default function AddMedicine({ patientId, meds, autoScan, onDone }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [f, setF] = useState({
-    name: '', dose: '1 pill', times: '08:00', expiration: '', pills_left: '30', slot: free[0] ?? null, color: 'white',
+    // empty, not example values: anything filled in must come from the label or the person
+    name: '', dose: '', times: '', expiration: '', pills_left: '', slot: free[0] ?? null, color: 'white',
   });
   const set = (k) => (v) => setF((x) => ({ ...x, [k]: v }));
   useEffect(() => { if (autoScan) scan(true); }, []); // "Scan a label": straight to the camera
@@ -42,8 +46,9 @@ export default function AddMedicine({ patientId, meds, autoScan, onDone }) {
     try {
       const form = new FormData();
       if (Platform.OS === 'web') form.append('photo', await (await fetch(asset.uri)).blob(), 'label.jpg');
+      else if (FsFile) form.append('photo', new FsFile(asset.uri));
       else form.append('photo', { uri: asset.uri, name: asset.fileName ?? 'label.jpg', type: asset.mimeType ?? 'image/jpeg' });
-      const d = await api.readLabel(form); // nulls for anything Gemini couldn't read
+      const d = await api.readLabel(form); // nulls for anything the AI couldn't read
       setF((x) => ({
         ...x,
         name: d.name ?? x.name,
@@ -66,7 +71,7 @@ export default function AddMedicine({ patientId, meds, autoScan, onDone }) {
     if (!f.name.trim()) return setError('Enter the medicine name.');
     if (!times.length || !times.every((t) => HHMM.test(t))) return setError('Times must look like 08:00, 20:00.');
     if (!YMD.test(f.expiration)) return setError('Expiration must look like 2027-01-31.');
-    if (!(pills >= 0)) return setError('Pills left must be a number.');
+    if (!(pills >= 0)) return setError('Enter how many pills are in the bottle.');
     if (!f.slot) return setError('All 7 boxes are full. Remove a medicine first.');
     const m = {
       patient_id: patientId, name: f.name.trim(), dose: f.dose.trim() || '1 pill', times,
@@ -104,11 +109,11 @@ export default function AddMedicine({ patientId, meds, autoScan, onDone }) {
       </Card>
 
       <Title>Medicine</Title>
-      <Field label="Name" value={f.name} onChangeText={set('name')} placeholder="Aspirin" />
-      <Field label="Dose" value={f.dose} onChangeText={set('dose')} placeholder="1 pill" />
-      <Field label="Times (24h, comma separated)" value={f.times} onChangeText={set('times')} placeholder="08:00, 20:00" />
-      <Field label="Expiration (YYYY-MM-DD)" value={f.expiration} onChangeText={set('expiration')} placeholder="2027-01-31" />
-      <Field label="Pills in the bottle" value={f.pills_left} onChangeText={set('pills_left')} keyboardType="number-pad" />
+      <Field label="Name" value={f.name} onChangeText={set('name')} placeholder="e.g. Aspirin" />
+      <Field label="Dose" value={f.dose} onChangeText={set('dose')} placeholder="e.g. 1 pill" />
+      <Field label="Times (24h, comma separated)" value={f.times} onChangeText={set('times')} placeholder="e.g. 08:00, 20:00" />
+      <Field label="Expiration (YYYY-MM-DD)" value={f.expiration} onChangeText={set('expiration')} placeholder="e.g. 2027-01-31" />
+      <Field label="Pills in the bottle" value={f.pills_left} onChangeText={set('pills_left')} keyboardType="number-pad" placeholder="e.g. 30" />
 
       <Title>Box in the cabinet</Title>
       {free.length === 0 && <Text style={s.error}>All 7 boxes are full.</Text>}
