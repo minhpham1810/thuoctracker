@@ -32,7 +32,7 @@ _mock = os.environ.get("MOCK", "")
 MOCK = {"servo", "camera", "audio"} if _mock in ("1", "all") else set(filter(None, _mock.split(",")))
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SOUNDS = os.path.join(HERE, "sounds")  # time_for_pill.mp3, good_job.mp3, already_took.mp3, missed.mp3
+SOUNDS = os.path.join(HERE, "sounds")  # listening.mp3; offline: time_for_pill, good_job, already_took, missed .mp3
 MOCK_PHOTO = os.path.join(HERE, "mock", "slot.jpg")
 
 # Boxes 1-3 top row, 4-6 middle row, 7 the long bottom box. Box n is wired to
@@ -280,6 +280,8 @@ def _louder(pcm: bytes) -> bytes:
 
 def ask_question():
     """Talk button: record a question, the backend answers it from the dose log, play the answer."""
+    # the patient can't see this terminal: the speaker says when to talk (recording starts right after)
+    attempt("audio", _play, os.path.join(SOUNDS, "listening.mp3"))  # "I'm listening. Please ask your question."
     print(f"[ask] listening for {ASK_SECONDS} s: speak now")
     with open(record_question(), "rb") as f:
         r = requests.post(f"{BACKEND}/ai/ask", params={"patient_id": PATIENT_ID},
