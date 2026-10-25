@@ -4,6 +4,9 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 01:40 Thanh (pi + esp32): **Voice works end to end on the real cabinet.** Pi `esp32 ask` (or a talk button): the ESP32 speaker says "I'm listening. Please ask your question.", the INMP441 records 5 s, the laptop's local Gemma 4 answers from the dose log, the answer plays on the ESP32's 8 Ohm speaker. The board runs the teammate's `code.py` (volume knob + mute, Hall off, `status`) merged with the new `audio` command; it and `boot.py` are now in `pi/esp32/`. Fixes found on hardware: S3 USB endpoint limit (drive hidden in normal runs), a Linux echo at port open (ping handshake), and a CircuitPython bug where one big `readinto()` stops at half (board reads in 4 KB blocking chunks).
+  - Everyone: **update the board from the Pi with `.venv/bin/python pi/esp32/push.py code.py`** (no buttons). Editing mode for the drive: hold the knob in while tapping RESET. Never hold BOOT during RESET (that's the ROM bootloader).
+  - `pi/.env` on the Pi: `AUDIO=esp32` and no `audio` in `MOCK`. Stop `cabinet.service` while running bench commands, start it after.
 - 00:30 Minh Dau (ai + backend): **Fixed "Couldn't read the label" for everyone.** Cause: our shared Gemini key's free tier allows `gemini-3.5-flash` only about 1-2 image requests a minute, shared by every laptop, and the Gemini fallback sent the full 3+ MB phone photo. Every scan got `429 Too Many Requests`.
   - Labels now use **`gemini-3.5-flash-lite`**: 4 scans in a row read correctly, about 7 s each. Pill counting stays on `gemini-3.5-flash`.
   - The photo is shrunk for Gemini too, and a 429 waits the delay Gemini asks for (max 15 s) and retries once.
