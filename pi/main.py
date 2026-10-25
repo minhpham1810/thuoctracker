@@ -40,6 +40,7 @@ TAKE_SECONDS = int(os.environ.get("TAKE_SECONDS", "10"))  # slot stays open this
 AUDIO = os.environ.get("AUDIO", "pi")  # "esp32": speaker and mic are on the ESP32 (pi/esp32/)
 ESP32_PORT = os.environ.get("ESP32_PORT", "")  # default: found by its USB id
 ASK_SECONDS = 5  # a voice question is recorded for this long
+POLL_SECONDS = 0.5  # backend command checks: a screen tap reaches the cabinet within this (was 2 s)
 RATE = 16000  # speech audio everywhere: 16 kHz, 16-bit, mono
 
 # Parts: servo, camera, audio. MOCK=1 fakes all of them.
@@ -237,10 +238,22 @@ def _with_esp32(fn):
         raise
 
 
+_pcm_cache: dict[str, tuple[tuple[int, int], bytes]] = {}  # path -> ((mtime, size), samples)
+
+
 def _to_pcm(mp3_path: str) -> bytes:
-    """MP3 -> the ESP32's format: raw 16 kHz, 16-bit, mono samples (mpg123 -s writes them to stdout)."""
-    return subprocess.run([_mpg123(), "-q", "-m", "-r", str(RATE), "-e", "s16", "-s", mp3_path],
-                          capture_output=True, check=True, timeout=60).stdout
+    """MP3 -> the ESP32's format: raw 16 kHz, 16-bit, mono samples (mpg123 -s writes them to stdout).
+    Kept per file, so the "I'm listening" prompt and the stored sounds convert once (~0.2 s saved
+    each time); a new answer in the same file changes its mtime and is converted again."""
+    st = os.stat(mp3_path)
+    key = (st.st_mtime_ns, st.st_size)
+    hit = _pcm_cache.get(mp3_path)
+    if hit and hit[0] == key:
+        return hit[1]
+    pcm = subprocess.run([_mpg123(), "-q", "-m", "-r", str(RATE), "-e", "s16", "-s", mp3_path],
+                         capture_output=True, check=True, timeout=60).stdout
+    _pcm_cache[mp3_path] = (key, pcm)
+    return pcm
 
 
 def _mpg123() -> str:
@@ -408,16 +421,20 @@ def idle(seconds: float):
 
 def main():
     print(f"[pi] backend {BACKEND}, patient {PATIENT_ID}, audio {AUDIO}, mock {sorted(MOCK) or 'none'}")
+    if AUDIO == "esp32" and "audio" not in MOCK:
+        attempt("audio", _to_pcm, os.path.join(SOUNDS, "listening.mp3"))  # ready before the first question
+    http = requests.Session()  # one kept-open connection: checking twice a second stays cheap
     while True:
         try:
-            cmd = requests.get(f"{BACKEND}/cabinet/{PATIENT_ID}/command", timeout=5).json()
+            cmd = http.get(f"{BACKEND}/cabinet/{PATIENT_ID}/command", timeout=5).json()
         except requests.RequestException as e:
             print(f"[pi] backend unreachable: {e.__class__.__name__}")
             cmd = {}
+            time.sleep(2)  # don't hammer a backend that's down
         if cmd:
             handle(cmd)
         else:
-            idle(2)
+            idle(POLL_SECONDS)
 
 
 def test(args: list[str]):
