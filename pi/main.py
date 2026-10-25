@@ -110,6 +110,22 @@ class Esp32:
         self.link = serial.Serial(port, timeout=0.2)
         self.link.reset_input_buffer()  # leftovers from before a reconnect would misalign the replies
         self.pressed = False  # its talk button was pressed since button_pressed() last looked
+        self._sync()
+
+    def _sync(self):
+        """Line up with the board. Whatever it queued before we opened the port (its "ready", or
+        that line echoed back to it by Linux while the port opens, which it answers with "err")
+        is skipped until the "pong" for our ping."""
+        self.link.write(b"\nping\n")
+        end = time.monotonic() + 3
+        buf = b""
+        while time.monotonic() < end:
+            buf += self.link.readline()
+            if buf.endswith(b"\n"):
+                if buf.strip() == b"pong":
+                    return
+                buf = b""
+        raise TimeoutError("the ESP32 didn't answer ping")
 
     def _line(self, timeout: float) -> str:
         """The next reply; "btn" and "ready" can arrive at any time and are noted, not returned."""

@@ -146,6 +146,8 @@ def run(line):
         send("ok")
     elif word == "rec":
         record(float(arg))  # replies with pcm N + the audio
+    elif word in ("ready", "btn", "pong", "ok", "err", "pcm"):
+        pass  # one of our own lines, echoed back by Linux while the Pi opened the port
     else:
         raise ValueError("unknown command " + word)
 
