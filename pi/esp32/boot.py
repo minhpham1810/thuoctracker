@@ -1,7 +1,5 @@
 # ESP32-S3 audio unit (CircuitPython). Runs once at power-on or RESET, before code.py.
 # To update files, use pi/esp32/push.py from the Pi (no buttons needed).
-import time
-
 import digitalio
 import microcontroller
 import storage
@@ -9,17 +7,12 @@ import usb_cdc
 import usb_hid
 import usb_midi
 
-# Editing mode (the CIRCUITPY drive comes back): press RESET, let go, then press BOOT within
-# 2 seconds. Not during RESET: holding BOOT through a reset starts the chip's own USB
-# bootloader instead of CircuitPython.
-boot_button = digitalio.DigitalInOut(microcontroller.pin.GPIO0)
-boot_button.switch_to_input(pull=digitalio.Pull.UP)
-editing = False
-deadline = time.monotonic() + 2
-while time.monotonic() < deadline and not editing:
-    editing = not boot_button.value
-    time.sleep(0.02)
-boot_button.deinit()
+# Editing mode (the CIRCUITPY drive comes back): hold the volume knob pressed in while pressing
+# RESET. (Not the BOOT button: holding BOOT through a reset starts the chip's own USB bootloader.)
+knob = digitalio.DigitalInOut(microcontroller.pin.GPIO15)  # encoder SW, Feather A3
+knob.switch_to_input(pull=digitalio.Pull.UP)
+editing = not knob.value
+knob.deinit()
 
 # The S3 has only 5 USB IN endpoints (the control one included): too few for the drive and
 # two serial ports at once, so it would fall back to safe mode. Normal run: the console plus

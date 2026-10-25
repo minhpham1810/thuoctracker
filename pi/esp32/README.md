@@ -15,10 +15,12 @@ talks to it when `AUDIO=esp32` is set in `pi/.env`.
    for the drive plus the Pi's data port.
    **To update files later, from the Pi:** `.venv/bin/python pi/esp32/push.py code.py` (or
    `boot.py code.py`). It copies over the console port; no buttons, no drive.
-   To get the drive back instead: press RESET, let go, then press BOOT within 2 seconds.
+   To get the drive back instead: hold the volume knob pressed in while pressing RESET.
    **Never hold BOOT while pressing RESET**: that starts the chip's USB bootloader (it shows up as
    "Espressif USB JTAG serial debug unit"); press RESET alone to leave it.
-5. Optional talk button: wire a push button between a free pin and GND, and set `BUTTON_PIN`
+5. The volume knob (rotary encoder on A1/A2, push = mute on A3) works on the board itself; the
+   Pi doesn't need to do anything for it. `status` reports volume and mute.
+6. Optional talk button: wire a push button between a free pin and GND, and set `BUTTON_PIN`
    in `code.py` (e.g. `pin.GPIO4`).
 
 ## Connect it to the Pi
