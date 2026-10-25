@@ -2,3 +2,4 @@ requests
 adafruit-circuitpython-servokit
 picamera2
 sounddevice
+pyserial
