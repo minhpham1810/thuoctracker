@@ -300,9 +300,9 @@ def speech_url(text: str) -> Optional[str]:
     return f"/audio/{name}"
 
 
-def say(patient_id: int, dose: DoseLog, text: str, sound: str, open_slot: Optional[int] = None):
-    """Queue audio for the Pi; open_slot only when the door should open."""
-    cmd = {"dose_id": dose.id, "say_url": speech_url(text), "sound": sound}
+def say(patient_id: int, dose: DoseLog, text: Optional[str], sound: Optional[str], open_slot: Optional[int] = None):
+    """Queue audio for the Pi; open_slot only when the door should open. text None: open the door silently."""
+    cmd = {"dose_id": dose.id, "say_url": speech_url(text) if text else None, "sound": sound}
     if open_slot:
         cmd["open_slot"] = open_slot
     push_command(patient_id, cmd)
@@ -381,27 +381,58 @@ def claim_alert(key: tuple) -> bool:
                   *key))
 
 
+def and_list(items: list[str]) -> str:
+    """'A', 'A and B', 'A, B and C'"""
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + f" and {items[-1]}"
+
+
+def pill_call(p: Patient, meds: list[Medicine]) -> str:
+    """The pill-time announcement, each pill due now named once: "Hi, Grandma Lan, please pay attention. You have
+    a white pill and a blue pill. Atorvastatin and Aspirin, now." It names pills; it never says a dose amount."""
+    colors = [f"{'an' if med.color[:1].lower() in 'aeiou' else 'a'} {med.color} pill" for med in meds]
+    return f"Hi, {p.name}, please pay attention. You have {and_list(colors)}. {and_list([med.name for med in meds])}, now."
+
+
 def remind(dose: DoseLog, m: Medicine):
-    """Open the box and say it's pill time. Callers record doses.reminded_at."""
+    """Open the box and announce pill time. Pills due the same minute share one announcement: the dose with the
+    lowest id says it, the others only open their doors. Callers record doses.reminded_at."""
     if door_queued(m.patient_id, dose.id):  # Pi hasn't picked up the last one yet (door cycle > repeat time)
         return
-    say(m.patient_id, dose, f"Time for your {m.color} pill, {m.name}.", "time_for_pill", open_slot=m.slot)
-    set_state(m.patient_id, "take", dose, m, f"Take your {m.color} pill now ({m.name})")
+    group = q("SELECT d.id AS dose_id, m.* FROM doses d JOIN medicines m ON m.id = d.medicine_id"
+              " WHERE m.patient_id = %s AND d.status = 'pending'"
+              " AND date_trunc('minute', d.due_at) = date_trunc('minute', %s::timestamp) ORDER BY m.slot",
+              m.patient_id, dose.due_at)
+    text = pill_call(get_patient(m.patient_id), [Medicine(**r) for r in group] or [m])
+    first = min((r["dose_id"] for r in group), default=dose.id)
+    if dose.id == first:
+        say(m.patient_id, dose, text, "time_for_pill", open_slot=m.slot)
+    else:
+        say(m.patient_id, dose, None, None, open_slot=m.slot)
+    set_state(m.patient_id, "take", dose, m, text)
+
+
+def start_doses(items: list[tuple[Medicine, datetime]]) -> list[DoseLog]:
+    """Create the doses, then announce: every pill due at once is in the database before the first
+    announcement, so it names them all. Doses another scheduler already started are skipped."""
+    started = []
+    for m, due_at in items:
+        row = q1("INSERT INTO doses (medicine_id, due_at, reminded_at) VALUES (%s, %s, %s)"
+                 " ON CONFLICT DO NOTHING RETURNING *", m.id, due_at, datetime.now())
+        if row:
+            started.append((DoseLog(**row), m))
+    for dose, m in started:
+        remind(dose, m)
+        p = get_patient(m.patient_id)
+        push_to("patient", p, "Pill time", f"Time for your {m.color} pill ({m.name}).")
+        # many older patients don't use a phone: family gets it too so they can call or help
+        push_to("family", p, "Pill time", f"Time for {p.name}'s {m.color} pill ({m.name}), slot {m.slot}.")
+    return [d for d, _ in started]
 
 
 def start_dose(m: Medicine, due_at: datetime) -> Optional[DoseLog]:
     """None if this dose already exists (another scheduler started it)."""
-    row = q1("INSERT INTO doses (medicine_id, due_at, reminded_at) VALUES (%s, %s, %s)"
-             " ON CONFLICT DO NOTHING RETURNING *", m.id, due_at, datetime.now())
-    if not row:
-        return None
-    dose = DoseLog(**row)
-    remind(dose, m)
-    p = get_patient(m.patient_id)
-    push_to("patient", p, "Pill time", f"Time for your {m.color} pill ({m.name}).")
-    # many older patients don't use a phone: family gets it too so they can call or help
-    push_to("family", p, "Pill time", f"Time for {p.name}'s {m.color} pill ({m.name}), slot {m.slot}.")
-    return dose
+    started = start_doses([(m, due_at)])
+    return started[0] if started else None
 
 
 def tick(last: datetime) -> datetime:
@@ -411,12 +442,10 @@ def tick(last: datetime) -> datetime:
     patients = {r["id"]: Patient(**r) for r in q("SELECT * FROM users WHERE role = 'patient'")}
     meds = {m.id: m for m in all_medicines()}
     sent = {(r["kind"], r["medicine_id"]) for r in q("SELECT kind, medicine_id FROM alerts_sent")}
+    due_now = [(m, datetime.combine(now.date(), time.fromisoformat(t))) for m in meds.values() for t in m.times]
+    start_doses([(m, due) for m, due in due_now if last < due <= now])  # all at once: one announcement per minute
     for m in meds.values():
         p = patients[m.patient_id]
-        for t in m.times:
-            due = datetime.combine(now.date(), time.fromisoformat(t))
-            if last < due <= now:
-                start_dose(m, due)
         low = ("low_pills", m.id)
         if m.pills_left < 5 and low not in sent and claim_alert(low):
             add_alert("low_pills", "doctor", p, f"{p.name} has {m.pills_left} {m.name} left. Refill needed.")
