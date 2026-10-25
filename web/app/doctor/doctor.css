@@ -313,12 +313,14 @@
 @keyframes arrive { from { background: var(--teal-wash); } }
 
 /* Schedule (third inbox tab) */
-.sched { overflow-y: auto; display: grid; align-content: start; gap: 4px; }
+.sched { overflow-y: auto; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 4px; }
 .sched-sum { padding: 12px 0 4px; font-size: calc(14px * var(--fs)); }
 .sched-sum span { display: block; color: var(--ink-2); font-size: calc(13px * var(--fs)); }
 .sched-form { display: grid; gap: 12px; margin: 8px 0; padding: 14px; border-radius: 16px; background: var(--mist); box-shadow: var(--press); }
 .sched-form h3 { font-size: calc(15px * var(--fs)) !important; }
-.sched-form .fields { grid-template-columns: 1fr 1fr; gap: 10px; }
+.sched-form .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+/* time inputs and selects size to their longest option ("Every Monday, 13 weeks"): let them shrink to the column */
+.sched-form :is(input, select) { width: 100%; min-width: 0; }
 .note.ok { margin: 0 !important; padding: 10px 12px; border-radius: var(--r-ctl); background: var(--ok-wash); color: var(--ok); font-weight: 500; }
 .slot-list { list-style: none; padding: 0; }
 .slot { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
