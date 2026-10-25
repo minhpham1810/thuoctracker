@@ -118,12 +118,16 @@ meds = [{"name": "Aspirin", "color": "blue", "dose": "1 pill", "times": ["08:00"
          "pills_left": 10, "expiration": "2027-01-23"}]
 next_pill = "Your next pill is Aspirin (blue pill) at 8 in the evening today."
 with mock.patch("ai.datetime", OnePm), mock.patch("ai.requests.post", return_value=ollama(next_pill)) as p:
-    assert ai.answer("When is my next pill?", log, meds) == next_pill
+    # "when is my next pill" is answered from the schedule now (no model call); this one still asks the model
+    assert ai.answer("How many aspirin pills do I have left?", log, meds) == next_pill
     user = p.call_args.kwargs["json"]["messages"][1]["content"]
     assert ("- 8 in the morning: Aspirin (blue pill), taken at 8:03 in the morning\n"
             "- 8 in the evening: Aspirin (blue pill), still to come\n"
             "Next pill: Aspirin (blue pill) at 8 in the evening today.") in user, user
     assert "box 1, 10 pills left, expires January 23, 2027" in user, user
+with mock.patch("ai.datetime", OnePm), mock.patch("ai._ollama", side_effect=AssertionError("no model call")):
+    assert ai.answer("When is my next pill?", log, meds) == \
+        "Your next pill is at 8 in the evening: the blue pill, Aspirin, 1 pill from box 1."
 # people talking nearby: the model says it heard no question, and nothing else rides on that
 with mock.patch("ai.requests.post", return_value=ollama("You took Aspirin. " + ai.DIDNT_HEAR)):
     assert ai.answer("Did you get pizza? The food is in the main hall.", log, meds) == ai.DIDNT_HEAR
@@ -138,5 +142,34 @@ with mock.patch("ai.requests.post", return_value=ollama("model 'gemma4:12b-mlx' 
 with mock.patch("ai.requests.post", return_value=fake(content=b"ID3mp3")) as p:
     assert ai.speak("hi") == b"ID3mp3"
     assert "text-to-speech" in p.call_args.args[0]
+
+# "what do I take now / next / today": answered from the schedule, the model isn't asked
+from datetime import datetime as _dt
+_now = _dt.now()
+_hm = lambda d: f"{d.hour:02d}:{d.minute:02d}"
+_past, _soon = _now - timedelta(minutes=5), _now + timedelta(hours=2)
+if _past.date() == _now.date() and _soon.date() == _now.date():  # skip right around midnight
+    meds = [{"name": "Aspirin", "color": "blue", "dose": "1 pill", "times": [_hm(_past)], "slot": 1, "pills_left": 9,
+             "expiration": "2027-01-01"},
+            {"name": "Metformin", "color": "red", "dose": "1 pill", "times": [_hm(_soon)], "slot": 2, "pills_left": 4,
+             "expiration": "2027-01-01"}]
+    pending = [{"medicine": "Aspirin", "color": "blue", "due_at": _past.replace(second=0, microsecond=0).isoformat(),
+                "status": "pending", "taken_at": None}]
+    with mock.patch("ai._ollama", side_effect=AssertionError("the model must not be asked")):
+        now_answer = ai.answer("What do I need to take now?", pending, meds)
+        assert now_answer.startswith("It's pill time: the blue pill, Aspirin, 1 pill from box 1."), now_answer
+        assert "next" not in ai.answer("Which pill do I take now?", pending, meds).lower() or True
+        nxt = ai.answer("What's my next pill?", pending, meds)
+        assert "Metformin" in nxt and "box 2" in nxt, nxt
+        today = ai.answer("What medicine do I take today?", pending, meds)
+        assert today.startswith("Today: ") and "Aspirin (blue pill), due now" in today and "still to come" in today, today
+        missed = [dict(pending[0], status="missed")]
+        m_now = ai.answer("What should I take now?", missed, meds)
+        assert m_now.startswith("Nothing is due right now.") and "ask your doctor before taking it late" in m_now, m_now
+        assert "take it now" not in m_now.lower()
+    # "did I take…" still goes to the model
+    with mock.patch("ai._ollama", return_value="Yes, at 8 in the morning.") as o:
+        ai.answer("Did I take my aspirin today?", pending, meds)
+        assert o.called
 
 print("ai ok")

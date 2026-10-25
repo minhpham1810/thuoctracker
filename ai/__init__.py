@@ -232,6 +232,7 @@ def answer(question: str, dose_log: list[dict], medicines: list[dict] = ()) -> s
         return NO_DOSES  # from the data: nothing for the model to read, so it can only make things up
     now = datetime.now()
     meds, today, schedule = [], [], []  # schedule: today's pill times in the log's shape, for the checks below
+    items = []  # (time, medicine, what happened): today's pills for the schedule answers below
     for m in medicines:
         pill = f"{m['name']} ({m['color']} pill)"
         at = sorted(now.replace(hour=int(t[:2]), minute=int(t[3:]), second=0, microsecond=0) for t in m["times"])
@@ -244,13 +245,20 @@ def answer(question: str, dose_log: list[dict], medicines: list[dict] = ()) -> s
             # "missed" and gave an 8 AM dose as taken at 2 AM
             row = next((x for x in log if x["medicine"] == m["name"] and x["due_at"][:16] == t.isoformat()[:16]), None)
             today.append((t, pill, _did(row) if row else "still to come" if t > now else "not in the log"))
+            items.append((t, m, row["status"] if row else "later" if t > now else "unlogged"))
     today.sort()
+    items.sort(key=lambda x: x[0])
     # the next pill too (left alone, the model said "your next dose is not listed in the log")
     nxt = next(((t, p) for t, p, did in today if did == "still to come"), None)
     if nxt:
         next_pill = f"Next pill: {nxt[1]} at {_clock(nxt[0])} today."
     elif today:
         next_pill = f"Next pill: tomorrow, {today[0][1]} at {_clock(today[0][0])}."
+    # "what do I take now / next / today": answered from the schedule here, word for word. The small model read
+    # these as advice ("whether to take a pill now") and said DONT_KNOW; saying what's scheduled isn't advice.
+    scheduled = _schedule_answer(question, items, medicines, now)
+    if scheduled:
+        return scheduled
     names = {x["medicine"].lower() for x in log + schedule}
     # asking about a medicine that isn't in the log: answer from the data too (the model invented doses for it)
     for drug in sorted(_drugs_in(question)):
@@ -274,8 +282,9 @@ def answer(question: str, dose_log: list[dict], medicines: list[dict] = ()) -> s
             "sentences, using only the medicines and dose log you are given. Mention every dose the question covers, "
             "missed ones too. Say times exactly as they are written. For today's doses, go by Today's pills. "
             "Never tell the patient to take, skip, double or change any dose, and never give medical advice. "
-            "If the question asks for advice (like whether to take a pill now), or what you are given does not "
-            f'answer it, reply with exactly this sentence and nothing else: "{DONT_KNOW}" '
+            "Saying which pills are scheduled, when, and from which box is not advice: answer it from Today's pills. "
+            "If the question asks for advice (like taking a missed or extra pill, changing a dose, or what to do about "
+            f'a symptom), or what you are given does not answer it, reply with exactly this sentence and nothing else: "{DONT_KNOW}" '
             # the Pi raises quiet recordings up to 20x, so people talking across the room come through clearly
             "If the words are not a question to you about the patient's medicines or pills (for example people "
             f'talking to each other nearby), reply with exactly this sentence and nothing else: "{DIDNT_HEAR}"'},
@@ -292,6 +301,62 @@ def answer(question: str, dose_log: list[dict], medicines: list[dict] = ()) -> s
         print(f"[ai] answer not in the dose log ({why}), said DONT_KNOW instead: {text!r}")
         return DONT_KNOW
     return text
+
+
+_NOW = re.compile(r"\b(now|right now|pill time|due)\b|\bwhat (do|should) i take\b|\bwhat am i (supposed|meant) to take\b"
+                  r"|\bwhich (pill|pills|medicine|medicines|box)\b")
+_NEXT = re.compile(r"\bnext\b|\bwhen is my\b|\bwhen do i\b")
+_TODAY = re.compile(r"\btoday\b|\btonight\b|\bthis (morning|afternoon|evening)\b")
+_TAKE_WORDS = re.compile(r"\b(take|taking|pill|pills|medicine|medicines|medication|dose|doses|tablet|tablets|box)\b")
+_PAST = re.compile(r"\b(did|have i|had i|was|were|missed|forgot|already)\b")  # "did I take…": the model answers those
+
+
+def _schedule_answer(question: str, items: list, medicines, now: datetime) -> str:
+    """Exact answers to "what do I take now / next / today?" from today's schedule ("" if it isn't one of those).
+    items: (time, medicine row, status) for today, status: taken / missed / pending / later / unlogged.
+    It says what is scheduled; it never tells the patient to take a missed pill."""
+    q = question.lower()
+    if not medicines or not _TAKE_WORDS.search(q) or _PAST.search(q):
+        return ""
+
+    # "when do I take my aspirin / my red pill": only that medicine
+    named = [m for m in medicines if m["name"].lower() in q or f"{m['color'].lower()} pill" in q]
+    if named:
+        items = [x for x in items if x[1] in named]
+
+    def pill(m):
+        return f"the {m['color']} pill, {m['name']}, {m['dose']} from box {m['slot']}"
+
+    def first_tomorrow():
+        t, m = min(((tt, mm) for tt, mm, _ in items), key=lambda x: x[0], default=(None, None))
+        return f"Your next pill is tomorrow at {_clock(t)}: {pill(m)}." if m else ""
+
+    due = [(t, m) for t, m, st in items if st == "pending"]
+    missed = [(t, m) for t, m, st in items if st == "missed"]
+    later = [(t, m) for t, m, st in items if st == "later"]
+    nxt = (f"Your next pill is at {_clock(later[0][0])}: {pill(later[0][1])}." if later else first_tomorrow())
+    missed_names = " and ".join(_clock(t) + " " + m["name"] for t, m in missed)
+    one = len(missed) == 1
+    missed_note = (f" Your {missed_names} {'was' if one else 'were'} missed; please ask your doctor before taking "
+                   f"{'it' if one else 'them'} late.") if missed else ""
+
+    if _TODAY.search(q) and not re.search(r"now", q):
+        if not items:
+            return "You have no pills scheduled today."
+        word = {"taken": "taken", "missed": "missed", "pending": "due now", "later": "still to come",
+                "unlogged": "not recorded"}
+        parts = [f"{_clock(t)}, {m['name']} ({m['color']} pill), {word[st]}" for t, m, st in items]
+        return "Today: " + "; ".join(parts) + "."
+    if _NEXT.search(q) and not _NOW.search(q.replace("next", "")):
+        now_part = ("It's pill time now: " + " and ".join(pill(m) for _, m in due) + ". After that, ") if due else ""
+        if now_part and nxt:
+            return now_part + nxt[0].lower() + nxt[1:]
+        return now_part.replace(". After that, ", ".") or nxt or "You have no pills scheduled."
+    if _NOW.search(q):
+        if due:
+            return "It's pill time: " + " and ".join(pill(m) for _, m in due) + "." + missed_note
+        return "Nothing is due right now." + missed_note + (f" {nxt}" if nxt else "")
+    return ""
 
 
 def _did(x: dict) -> str:
