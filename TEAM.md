@@ -4,6 +4,9 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 02:15 Thanh (pi, screen route): **The screen shows a voice answer as the cabinet says it** (it was ~2 s early: the Pi still had to download, convert and send the audio to the ESP32). `/ai/ask` no longer saves the answer for the screen; the Pi posts it to the new `POST /cabinet/{id}/answer` right when the ESP32 has the audio, or anyway if playback fails. Contract table updated.
+  - Minh Dau: that route is in `backend/main.py` next to `GET /cabinet/{id}/answer`; `/ai/ask` is back to just returning `{text, audio_url}`.
+  - Thanh: on the Pi `git pull` and `sudo systemctl restart cabinet.service`.
 - 02:05 Thanh (ai one setting, backend one line, screen, pi): **Voice answers come out right after they appear.** `ai.speak` now uses ElevenLabs `eleven_flash_v2_5` (same Rachel voice): ~0.75 s per sentence vs ~1.6-2 s for `eleven_multilingual_v2` (measured with our key). `ELEVENLABS_MODEL` in `.env` switches back. `/ai/ask` saves the answer for the screen only after its MP3 exists, and the screen checks every 0.5 s, so the text no longer shows seconds before the cabinet speaks. The Pi now checks commands every 0.5 s (screen tap to voice ~0.3-0.8 s) and converts each sound once. `pi/sounds/listening.mp3` re-recorded with the fast model.
   - Minh Pham: in your `ai/__init__.py` I only added `VOICE_MODEL` (env `ELEVENLABS_MODEL`) and used it in `speak`.
 - 01:55 Minh Dau (app + backend): **Phone label scans: the real fix.** The 01:30 `File` workaround still failed on phones with "Unsupported FormDataPart implementation". The app now skips form uploads entirely: the picker returns the photo as base64, and the app sends it as JSON to the new `POST /ai/label64` `{image}`, which runs exactly the same label reading as `/ai/label`. Tested end to end with a phone-size photo; all 4 checks pass. The web dashboard keeps using `/ai/label`, which works in browsers.
@@ -169,7 +172,8 @@ The Pi and the cabinet screen both poll. If they share one route, whoever reads 
 | `GET /cabinet/{id}/today` | Screen | `{name, medicines, doses}` |
 | `POST /cabinet/{id}/taken?dose_id=7` | Screen "I took it" button | updated `DoseLog` |
 | `POST /cabinet/{id}/ask` | Screen "Ask a question" when its browser has no mic (the Pi kiosk: the mic is on the ESP32). Queues `{"ask": true, "at"}` for the Pi; dropped if the Pi doesn't take it within 30 s | `{"at": "2026-10-25T01:35:24.9"}` |
-| `GET /cabinet/{id}/answer` | Screen: the last voice answer (set by every `/ai/ask`); show it once `at` is newer than the ask's `at` | `{"text", "at"}` or `{}` |
+| `GET /cabinet/{id}/answer` | Screen: the last voice answer (set by the Pi as the cabinet starts saying it); show it once `at` is newer than the ask's `at` | `{"text", "at"}` or `{}` |
+| `POST /cabinet/{id}/answer` `{"text"}` | Pi: "the cabinet is starting to say this now" (after the ESP32 took the audio; also if playback failed) | `{"ok": true}` |
 | `POST /ai/ask?patient_id=1` (audio) | Pi | `{"text": "...", "audio_url": "/audio/q12.mp3"}` |
 | `GET /audio/{file}.mp3` | Pi | MP3 the backend made with `speak()` |
 

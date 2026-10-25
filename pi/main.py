@@ -159,17 +159,21 @@ class Esp32:
                 return line
         raise TimeoutError("the ESP32 didn't answer")
 
-    def _call(self, command: str, payload: bytes = b"", timeout: float = 30) -> str:
+    def _call(self, command: str, payload: bytes = b"", timeout: float = 30, on_sent=None) -> str:
+        """on_sent: called once the board has taken the whole payload (for audio: as it starts playing)."""
         import serial
 
         # a board that stops reading (crashed, or an old code.py that doesn't know the command) must
         # not hang the cabinet: give up on the write instead of waiting forever
         self.link.write_timeout = 5 + len(payload) / 20_000
         try:
+            # returns once all but the last few KB have gone to the board (no flush(): it has no timeout)
             self.link.write(command.encode() + b"\n" + payload)
         except serial.SerialTimeoutException:
             raise TimeoutError("the ESP32 stopped reading: is the latest code.py on it? "
                                "(.venv/bin/python pi/esp32/push.py code.py)") from None
+        if on_sent:
+            on_sent()
         reply = self._line(timeout)
         if reply.startswith("err"):
             if payload:
@@ -183,9 +187,10 @@ class Esp32:
         """One of the sounds stored on the ESP32 (/sounds/NAME.wav)."""
         self._call(f"play {name}")
 
-    def say(self, pcm: bytes):
-        """Send raw 16 kHz, 16-bit, mono audio; the ESP32 keeps it in RAM and plays it."""
-        self._call(f"audio {len(pcm)}", pcm, timeout=30 + len(pcm) / (2 * RATE))
+    def say(self, pcm: bytes, on_start=None):
+        """Send raw 16 kHz, 16-bit, mono audio; the ESP32 keeps it in RAM and plays it.
+        on_start: called as playback starts (the board has the audio); returns when it has finished."""
+        self._call(f"audio {len(pcm)}", pcm, timeout=30 + len(pcm) / (2 * RATE), on_sent=on_start)
 
     def record(self, seconds: float) -> bytes:
         """Raw 16 kHz, 16-bit, mono samples from the INMP441."""
@@ -263,18 +268,23 @@ def _mpg123() -> str:
     return player
 
 
-def _play(path: str):
+def _play(path: str, on_start=None):
+    """on_start: called as the sound starts playing."""
     if "audio" in MOCK:
         print(f"[mock] play {os.path.basename(path)}")
+        if on_start:
+            on_start()
         return
     if AUDIO == "esp32":
         pcm = _to_pcm(path)
-        _with_esp32(lambda esp: esp.say(pcm))
+        _with_esp32(lambda esp: esp.say(pcm, on_start))
         return
+    if on_start:
+        on_start()
     subprocess.run([_mpg123(), "-q", path], check=True, timeout=60)
 
 
-def play_mp3(path_or_url: str):
+def play_mp3(path_or_url: str, on_start=None):
     """Play through the MAX98357A speaker (on the ESP32 when AUDIO=esp32)."""
     if path_or_url.startswith("http"):
         r = requests.get(path_or_url, timeout=10)
@@ -282,7 +292,7 @@ def play_mp3(path_or_url: str):
         path_or_url = "/tmp/say.mp3"
         with open(path_or_url, "wb") as f:
             f.write(r.content)
-    _play(path_or_url)
+    _play(path_or_url, on_start)
 
 
 def record_question(seconds: int = ASK_SECONDS) -> str:
@@ -330,8 +340,21 @@ def ask_question():
     r.raise_for_status()
     answer = r.json()
     print(f"[ask] {answer['text']}")
-    if answer.get("audio_url"):
-        play_mp3(BACKEND + answer["audio_url"])
+    shown = []
+
+    def show():  # the screen shows the answer as the cabinet starts saying it, not ~2 s before
+        if not shown:
+            shown.append(True)
+            try:
+                requests.post(f"{BACKEND}/cabinet/{PATIENT_ID}/answer", json={"text": answer["text"]}, timeout=5)
+            except requests.RequestException as e:
+                print(f"[ask] couldn't show the answer on the screen: {e.__class__.__name__}")
+
+    try:
+        if answer.get("audio_url"):
+            play_mp3(BACKEND + answer["audio_url"], on_start=show)
+    finally:
+        show()  # no voice, or it failed: the screen still gets the answer
 
 
 def talk_button_pressed() -> bool:

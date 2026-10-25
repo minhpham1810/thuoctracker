@@ -21,7 +21,7 @@ from typing import Literal, Optional
 
 import psycopg
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Body, Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from psycopg.types.json import Jsonb
@@ -699,13 +699,8 @@ def ask(patient_id: int, audio: UploadFile = File(...)):
     # no transcript (Ollama down, model not pulled, audio not WAV): say sorry, never answer a question nobody asked
     question = try_ai(ai.transcribe, audio.file.read(), fallback=None)
     text = sorry if question is None else try_ai(ai.answer, question, dose_log(patient_id), fallback=sorry)
-    audio_url = speech_url(text)
-    # the screen shows it when the question came through the cabinet's mic (GET /cabinet/{id}/answer).
-    # Saved only once the voice exists, so the text doesn't appear seconds before the cabinet speaks.
-    q("INSERT INTO cabinet_answer (patient_id, text, at) VALUES (%s, %s, %s)"
-      " ON CONFLICT (patient_id) DO UPDATE SET text = EXCLUDED.text, at = EXCLUDED.at",
-      patient_id, text, datetime.now())
-    return {"text": text, "audio_url": audio_url}
+    # not saved for the screen here: the Pi posts it to /cabinet/{id}/answer as the cabinet starts saying it
+    return {"text": text, "audio_url": speech_url(text)}
 
 
 # --- Cabinet (login-free: the Pi and its touchscreen) ---------------------------
@@ -740,6 +735,17 @@ def cabinet_answer(patient_id: int):
     """Cabinet screen: the last voice answer, {"text", "at"}, or {} if none yet."""
     row = q1("SELECT text, at FROM cabinet_answer WHERE patient_id = %s", patient_id)
     return {"text": row["text"], "at": row["at"].isoformat()} if row else {}
+
+
+@app.post("/cabinet/{patient_id}/answer")
+def cabinet_answer_spoken(patient_id: int, text: str = Body(..., embed=True)):
+    """Pi: the cabinet is starting to say this answer now (its audio is on the ESP32). Saved here rather
+    than in /ai/ask, which is ~2 s earlier (download, convert, USB), so the screen shows it as it's heard."""
+    get_patient(patient_id)
+    q("INSERT INTO cabinet_answer (patient_id, text, at) VALUES (%s, %s, %s)"
+      " ON CONFLICT (patient_id) DO UPDATE SET text = EXCLUDED.text, at = EXCLUDED.at",
+      patient_id, text, datetime.now())
+    return {"ok": True}
 
 
 @app.get("/cabinet/{patient_id}/state")
