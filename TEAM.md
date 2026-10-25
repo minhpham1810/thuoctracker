@@ -4,6 +4,10 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 03:50 Minh Dau (backend + app + web): **Appointments are a month calendar now, 3 months ahead.** Doctor (dashboard Schedule tab and the app): tap a day to see its times and open new ones, with **Repeat: every <weekday> for 4, 8 or 13 weeks**, so 3 months take one click. Green days have open times; a teal dot means booked visits. Patient and family (app Visits tab): the same calendar shows which days the doctor is available; tap a green day, pick a time, book.
+  - Contract: `GET /schedule` now covers 92 days by default (up to 120); `POST /availability` takes `repeat_weeks` (0-13) and inserts all the times in one statement (13 weeks of afternoons took 0.7 s).
+  - Pull, restart the backend, reload the app and the dashboard. Tested in a throwaway schema: 8 new checks plus the 21 earlier ones.
+
 - 03:20 Minh Dau (web, in Minh Pham's folder): **The doctor dashboard has a Schedule tab** next to Alerts and Messages. The doctor opens times (day, from/to, 15/30/60 min), sees each booked visit with the patient and reason (click the name to open their chart), and can remove an open time or cancel a visit (two clicks; the patient and family are told). Each patient's chart header shows **"Next visit …"**. It uses the appointment routes from the 03:00 line; `GET /schedule` joins the 3 s refresh.
   - Minh Pham: files touched: new `web/app/doctor/schedule.tsx`; `dashboard.tsx` (third tab, `slots` in `Data`, `visit` prop on `PatientView`); `lib/api.ts` (`Appointment` type); `components/icon.tsx` (`calendar`); `doctor.css` (schedule styles); `layout.tsx` (`suppressHydrationWarning` on `<html>`/`<body>`: a custom-cursor browser extension added attributes and caused the "1 Issue" hydration error). `tsc` and `eslint` pass.
 
@@ -175,8 +179,8 @@ The doctor opens times; the patient, or their family, books one. Booking is one 
 
 | Route | Who | Returns |
 |---|---|---|
-| `GET /schedule` | logged in | `[Appointment]` `{id, doctor_id, doctor_name, starts_at, minutes, patient_id, patient_name, booked_by, reason}`, today + 14 days. Doctor: all their times, open (`patient_id: null`) and booked. Patient/family: the doctor's open future times + the patient's own visits |
-| `POST /availability` `{day: "YYYY-MM-DD", start: "09:00", end: "12:00", minutes: 15\|20\|30\|45\|60}` | doctor | `{added: [Appointment], skipped: n}`: one time every `minutes`; past times and overlaps are skipped |
+| `GET /schedule` | logged in | `[Appointment]` `{id, doctor_id, doctor_name, starts_at, minutes, patient_id, patient_name, booked_by, reason}`, today + 92 days (`?days=` up to 120). Doctor: all their times, open (`patient_id: null`) and booked. Patient/family: the doctor's open future times + the patient's own visits |
+| `POST /availability` `{day: "YYYY-MM-DD", start: "09:00", end: "12:00", minutes: 15\|20\|30\|45\|60, repeat_weeks: 0-13}` | doctor | `{added: [Appointment], skipped: n}`: one time every `minutes`, on `day` and the same weekday for `repeat_weeks` more weeks; past times, overlaps and days more than 120 days out are skipped |
 | `POST /slots/{id}/book` `{patient_id?, reason?}` | the patient, or their family (`patient_id` = their patient) | `Appointment`; 409 if just taken or past. Pushes the doctor, and the rest of the patient's circle |
 | `POST /slots/{id}/cancel` | the patient or their family | `Appointment` (open again); 409 if not booked or already started. Pushes the doctor + circle |
 | `DELETE /slots/{id}` | the doctor | `{ok}`; if it was booked, the patient + family get "Appointment cancelled" |

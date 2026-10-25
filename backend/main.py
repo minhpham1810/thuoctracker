@@ -671,6 +671,7 @@ def dose_taken(dose_id: int, u=Depends(me)) -> DoseLog:
 
 
 # --- Appointments ----------------------------------------------------------------
+MAX_AHEAD_DAYS = 120  # the calendar shows about 3 months; nothing is opened or listed past this
 APPOINTMENT_SQL = ("SELECT s.*, d.name AS doctor_name, p.name AS patient_name FROM appointment_slots s"
                    " JOIN users d ON d.id = s.doctor_id LEFT JOIN users p ON p.id = s.patient_id")
 
@@ -701,11 +702,11 @@ def booking_patient(u, patient_id: Optional[int]) -> Patient:
 
 
 @app.get("/schedule")
-def schedule(days: int = 14, u=Depends(me)) -> list[Appointment]:
+def schedule(days: int = 92, u=Depends(me)) -> list[Appointment]:
     """Doctor: every slot of theirs from today on, open and booked. Patient/family: the patient's doctor's open
     future slots and the patient's own appointments, never other patients' bookings."""
     today = datetime.combine(date.today(), time.min)
-    until = today + timedelta(days=max(1, min(days, 60)) + 1)
+    until = today + timedelta(days=max(1, min(days, MAX_AHEAD_DAYS)) + 1)
     if u.role == "doctor":
         rows = q(APPOINTMENT_SQL + " WHERE s.doctor_id = %s AND s.starts_at >= %s AND s.starts_at < %s"
                  " ORDER BY s.starts_at", u.id, today, until)
@@ -719,28 +720,33 @@ def schedule(days: int = 14, u=Depends(me)) -> list[Appointment]:
 
 @app.post("/availability")
 def add_availability(a: Availability, u=Depends(me)):
-    """Doctor opens times from start to end, one every `minutes`. Skips past times and times that overlap one
+    """Doctor opens times from start to end, one every `minutes`, on `day` and, with repeat_weeks, the same
+    weekday for that many weeks after. Skips past times, days past MAX_AHEAD_DAYS, and times that overlap one
     already in the schedule. Returns {added: [Appointment], skipped: n}."""
     if u.role != "doctor":
         raise HTTPException(403, "Only doctors set availability")
     start, end = (datetime.combine(a.day, time.fromisoformat(t)) for t in (a.start, a.end))
     if end <= start:
         raise HTTPException(400, "The end time must be after the start time")
+    if a.day > date.today() + timedelta(days=MAX_AHEAD_DAYS):
+        raise HTTPException(400, f"Open times at most {MAX_AHEAD_DAYS} days ahead")
     step, now = timedelta(minutes=a.minutes), datetime.now()
-    starts = [start + i * step for i in range(int((end - start) / step))]
-    if not starts:
+    per_day = [start + i * step for i in range(int((end - start) / step))]
+    if not per_day:
         raise HTTPException(400, f"No {a.minutes}-minute appointment fits between {a.start} and {a.end}")
-    if len(starts) > 48:
-        raise HTTPException(400, "That is more than 48 appointments; pick a shorter range")
-    ids = []
-    for t in (t for t in starts if t > now):
-        row = q1("INSERT INTO appointment_slots (doctor_id, starts_at, minutes) SELECT %s, %s, %s"
-                 " WHERE NOT EXISTS (SELECT 1 FROM appointment_slots WHERE doctor_id = %s AND starts_at < %s"
-                 " AND starts_at + make_interval(mins => minutes) > %s)"
-                 " ON CONFLICT (doctor_id, starts_at) DO NOTHING RETURNING id",
-                 u.id, t, a.minutes, u.id, t + step, t)
-        if row:
-            ids.append(row["id"])
+    if len(per_day) > 48:
+        raise HTTPException(400, "That is more than 48 appointments in a day; pick a shorter range")
+    last_day = datetime.combine(date.today() + timedelta(days=MAX_AHEAD_DAYS + 1), time.min)
+    starts = [t + timedelta(weeks=w) for w in range(a.repeat_weeks + 1) for t in per_day]
+    wanted = [t for t in starts if now < t < last_day]
+    # one statement for all of them (12 weeks can be hundreds of times): skip any that overlap an existing time
+    rows = q("INSERT INTO appointment_slots (doctor_id, starts_at, minutes)"
+             " SELECT %s, t, %s FROM unnest(%s::timestamp[]) AS t WHERE NOT EXISTS (SELECT 1 FROM appointment_slots s"
+             " WHERE s.doctor_id = %s AND s.starts_at < t + make_interval(mins => %s)"
+             " AND s.starts_at + make_interval(mins => s.minutes) > t)"
+             " ON CONFLICT (doctor_id, starts_at) DO NOTHING RETURNING id",
+             u.id, a.minutes, wanted, u.id, a.minutes) if wanted else []
+    ids = [r["id"] for r in rows]
     added = [Appointment(**r) for r in q(APPOINTMENT_SQL + " WHERE s.id = ANY(%s) ORDER BY s.starts_at", ids)]
     return {"added": added, "skipped": len(starts) - len(added)}
 

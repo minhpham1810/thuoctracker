@@ -111,11 +111,13 @@ class LabelPhoto(BaseModel):
 
 
 class Availability(BaseModel):
-    """A doctor opens appointment times on one day: from start to end, one every `minutes`."""
+    """A doctor opens appointment times on one day: from start to end, one every `minutes`.
+    repeat_weeks: also the same weekday for that many weeks after (e.g. every Tuesday for 12 weeks)."""
     day: date
     start: HHMM
     end: HHMM
     minutes: Literal[15, 20, 30, 45, 60] = 30
+    repeat_weeks: int = Field(0, ge=0, le=13)
 
 
 class Appointment(BaseModel):
