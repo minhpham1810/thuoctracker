@@ -1,11 +1,12 @@
 # Demo video script (5 minutes)
 
-Two parts, then one slide-style edit:
+Three parts, then one slide-style edit:
 
-- **Part A: the cabinet** (about 1:20). One phone camera films the real cabinet: the Pi screen, the doors, the voice.
-- **Part B: three phones, three roles** (about 3:00). Doctor, patient and family phones are screen-recorded **at the same time, same start, same end**, and shown side by side on one 16:9 slide so judges watch cause and effect: a tap on one phone, the result on another.
+- **Part A: the cabinet** (about 1:15 after trimming). One phone camera films the real cabinet: the Pi screen, the doors, the voice.
+- **Part B: three phones, three roles** (about 2:45 after trimming). Doctor, patient and family phones are screen-recorded **at the same time, same start, same end**, and shown side by side on one 16:9 slide so judges watch cause and effect: a tap on one phone, the result on another.
+- **Part C: the doctor's drug safety check** (about 0:30). Screen recording of the web dashboard on the laptop.
 
-Intro and outro add about 40 seconds. Narration is recorded **afterwards** over the edited video.
+Intro and outro about 15 seconds each. **Time budget:** 0:15 + 1:15 (A) + 2:45 (B) + 0:30 (C) + 0:15 = **5:00**, so trim while editing (see Editing). Narration is recorded **afterwards** over the edited video.
 
 ---
 
@@ -16,7 +17,7 @@ Intro and outro add about 40 seconds. Narration is recorded **afterwards** over 
 | **Doctor** | phone (ThuocTracker app) | `doctor@demo.com` / `demo1234` (Dr. Miller) | taps the doctor's steps |
 | **Patient** | phone | `mary@demo.com` / `demo1234` (Mary Johnson, 78) | taps the patient's steps |
 | **Family** | phone | `emily@demo.com` / `demo1234` (Emily, Mary's granddaughter) | taps the family's steps |
-| **Operator** (off camera) | laptop, web dashboard `localhost:3000/doctor` as `doctor@demo.com` | | presses **Pill time now** when the script says |
+| **Operator** (off camera) | laptop, web dashboard `localhost:3000/doctor` as `doctor@demo.com` | | presses **Pill time now** when the script says; records Part C |
 | **Camera** | spare phone on a stand | | films the cabinet in Part A |
 | **Narrator** | | | reads the lines below later, over the edit |
 
@@ -34,7 +35,8 @@ Mary's cabinet after a reset: **Aspirin** (blue, box 1, 8 AM), **Metformin** (re
    - Android: screen recorder settings → **include microphone** (or "Device audio and microphone").
 5. **A real bottle with a clear printed label** for scene 1, e.g. a vitamin bottle (name, "take 1 daily", quantity, expiration). Test-scan it once before filming.
 6. Each phone starts on its **home tab**: Doctor on **Patients**, Patient on **Today**, Family on **Today**.
-7. Do one full **practice run** without recording. Then reset again (step 2) and film.
+7. **Laptop for Part C:** dashboard open on Mary Johnson, scrolled to **Drug safety**; `ollama pull all-minilm` done (label search) and Gemma loaded (ask one question first so it's warm).
+8. Do one full **practice run** without recording. Then reset again (step 2) and film.
 
 ---
 
@@ -42,19 +44,20 @@ Mary's cabinet after a reset: **Aspirin** (blue, box 1, 8 AM), **Metformin** (re
 
 Frame: the whole cabinet with the Pi screen readable. Patient actor stands next to it.
 
+**Timing:** `DEMO=1` marks a pill missed **30 seconds** after pill time, and repeats the reminder every 10 seconds until then. So Mary takes the aspirin, leaves the metformin, and the cabinet's own "Did you take your Metformin?" question becomes part of the scene. Ask the voice questions **after** that, never while a pill is still due (an answer recorded at 0:25 can be out of date by 0:45).
+
 | Time | What happens | Narrator |
 |---|---|---|
 | 0:00 | Cabinet idle, Today strip on the screen. | "This is ThuocTracker: a smart pill cabinet for older adults. Seven boxes, a touchscreen, a camera, a speaker and a microphone, run by a Raspberry Pi." |
-| 0:12 | Operator presses **Pill time now** on Aspirin, then on Metformin (dashboard, off camera). | "It's 8 AM. Two pills are due." |
-| 0:15 | The cabinet says *"Hi, Mary Johnson, please pay attention. You have a blue pill and a red pill. Aspirin and Metformin, now."* Box 1 glows and opens. | (let the cabinet speak, no narration) |
-| 0:28 | Patient takes a candy from the open box. The door closes. | "The camera counts the pills before and after. One fewer means taken." |
-| 0:40 | Screen: **Good job!** | "No buttons needed. If the camera can't tell, she can tap *I took it*." |
-| 0:48 | Patient asks the cabinet: **"What do I need to take now?"** | |
-| 0:52 | The cabinet answers out loud (the red pill, Metformin, box 2). | "She can just ask. Answers come only from her real dose log and schedule. The AI never changes a dose; it only reminds and informs." |
-| 1:05 | Patient asks: **"Did I take my aspirin today?"** The cabinet answers. | "And it runs on a local AI model on our laptop, so her questions don't leave the house." |
+| 0:08 | Operator presses **Pill time now** on Aspirin, then on Metformin (dashboard, off camera). | "Two pills are due." |
+| 0:10 | The cabinet says *"Hi, Mary Johnson, please pay attention. You have a blue pill and a red pill. Aspirin and Metformin, now."* Box 1 glows and opens. | (let the cabinet speak, no narration) |
+| 0:22 | Mary takes a candy from **box 1 only**. The door closes; the screen says **Good job!** (camera count; if it can't tell, she taps **I took it**). She leaves Metformin. | "The camera counts the pills before and after. One fewer means taken." |
+| 0:30 | (The reminder for Metformin may repeat once: trim it in the edit.) | |
+| 0:40 | 30 seconds after pill time, Metformin is missed. The screen turns calm and asks: **Did you take your Metformin?** Red pill, box 2 lit, **Yes, I took it** / **Not yet**. | "If a pill isn't confirmed, the cabinet doesn't nag and never says 'take it now': a late pill can double up with the next one. It just asks." |
+| 0:48 | Mary taps **Not yet**. | "Not yet: it asks again in 30 minutes. Her family and doctor have already been told." |
+| 0:52 | Mary taps **Ask a question** and asks: **"Did I take my pills today?"** The cabinet answers (Aspirin taken, Metformin missed). | "She can just ask. Answers come only from her real dose log. The AI never changes a dose; it only reminds and informs." |
+| 1:05 | Mary asks: **"When is my next pill?"** The cabinet answers from her schedule (Metformin, 6 in the evening, and to ask her doctor before taking the missed one late). | "It runs on a local AI model on our laptop, so her questions don't leave the house." |
 | 1:20 | Cut. | |
-
----
 
 ## Part B: three phones at the same time (about 3:00)
 
@@ -105,6 +108,20 @@ Each row: who taps, where the viewer should look (highlight that column in the e
 
 ---
 
+## Part C: the doctor's drug safety check (laptop screen recording, about 0:30)
+
+The operator records the laptop screen (**Win + Alt + R**, or Clipchamp's screen recorder) on `localhost:3000/doctor`, logged in as `doctor@demo.com`, Mary Johnson's chart open, scrolled to **Drug safety**. Film it any time; it doesn't need to sync with the phones.
+
+| Time | What happens | Narrator |
+|---|---|---|
+| 0:00 | **Interactions** tab: Mary's medicines as chips (Aspirin, Metformin, Atorvastatin). | "Mary has a chest infection. Before prescribing, Dr. Miller checks the FDA labels: 53 prescribing labels from DailyMed, stored in our Tiger Data Postgres and searched by meaning and by keyword." |
+| 0:06 | Type **clarithromycin** in *Check a drug you're considering* → **Check**. | "Is clarithromycin safe with what she already takes?" |
+| 0:09 | **2 combinations to review.** Metformin + Clarithromycin (label warning: significant low blood sugar). Atorvastatin + Clarithromycin (Lipitor's label lists macrolide antibiotics under muscle damage; known CYP3A4 pathway). | "Two warnings, each quoted word for word from the FDA label, with a link to the source: low blood sugar with her metformin, and muscle damage with her statin. No AI decides this part: it's the label's own sentence." |
+| 0:20 | **Ask the labels** tab → tap the suggestion **"Does Metformin need a change when kidney function drops?"** (speed up the wait in the edit) → the answer with numbered citations. | "She can also ask in plain words. A local AI answers only from the label passages, cites each one, and says so when the labels don't answer." |
+| 0:30 | Cut. | |
+
+---
+
 ## Intro and outro (narrator over the dashboard or photos)
 
 - **Intro (0:20):** "Older adults often forget pills or take them twice. Their doctor writes the prescription but never knows if it was taken, and their family worries but can't check all day. We built ThuocTracker to close that loop."
@@ -120,7 +137,7 @@ Each row: who taps, where the viewer should look (highlight that column in the e
 4. **Speed up** waiting (the 30-second missed window, typing) and add a small caption saying so.
 5. Mute the phones' own audio (the mics were only for syncing), then add the narration track.
 6. Add **captions** for the narration and for what the cabinet says in Part A.
-7. Order: Intro → Part A → Part B → Outro. Keep it **under 5:00**. Export 1080p and upload to YouTube as **Unlisted** for Devpost.
+7. Order: Intro → Part A → Part B → Part C → Outro. Keep it **under 5:00**: if it runs long, shorten Scene 4 (the booking) and the typing in Scene 3 first. Export 1080p and upload to YouTube as **Unlisted** for Devpost.
 
 ## If something goes wrong while filming
 
