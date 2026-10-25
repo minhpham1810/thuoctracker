@@ -104,6 +104,12 @@ class Contact(BaseModel):
     last: Optional[Message] = None
 
 
+class LabelPhoto(BaseModel):
+    """Label photo as base64 (JPEG or PNG, an optional "data:...;base64," prefix is fine). The phone app sends
+    this instead of a multipart upload: SDK 58's fetch rejects React Native's file parts."""
+    image: str = Field(min_length=1)
+
+
 class PushToken(BaseModel):
     """Expo push token from the mobile app; stored on the caller's session."""
     token: str

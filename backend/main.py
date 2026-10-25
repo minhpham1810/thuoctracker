@@ -9,6 +9,7 @@ Auth: app and dashboard routes need "Authorization: Bearer <token>" from /login 
 Cabinet routes (Pi + touchscreen) and /demo/* are login-free: trusted devices on the hotspot.
 """
 import asyncio
+import base64
 import hashlib
 import hmac
 import os
@@ -29,7 +30,7 @@ from pydantic import TypeAdapter
 import ai
 
 from .db import SCHEMA, pool, q, q1
-from .models import (Alert, AnyUser, Contact, Credentials, DoseLog, Medicine, MedicineUpdate, Message, Patient,
+from .models import (Alert, AnyUser, Contact, Credentials, DoseLog, LabelPhoto, Medicine, MedicineUpdate, Message, Patient,
                      PushToken, Role, Session, Signup)
 from .push import send_push
 
@@ -659,7 +660,22 @@ def dose_taken(dose_id: int, u=Depends(me)) -> DoseLog:
 # sync defs so FastAPI runs the slow Gemini/ElevenLabs calls in a thread
 @app.post("/ai/label")
 def read_label(photo: UploadFile = File(...), u=Depends(me)):
-    """Label photo -> Medicine draft fields. Doctors and family (they scan bottles from the phone app)."""
+    """Label photo (multipart, field "photo") -> Medicine draft fields. The web dashboard uses this."""
+    return label_draft(photo.file.read(), u)
+
+
+@app.post("/ai/label64")
+def read_label_base64(body: LabelPhoto, u=Depends(me)):
+    """Label photo as base64 JSON -> Medicine draft fields. The phone app uses this."""
+    try:
+        image = base64.b64decode(body.image.split(",")[-1], validate=True)
+    except ValueError:
+        raise HTTPException(400, "image must be base64")
+    return label_draft(image, u)
+
+
+def label_draft(image: bytes, u) -> dict:
+    """Doctors and family (they scan bottles from the phone app)."""
     if u.role not in ("doctor", "family"):
         raise HTTPException(403, "Doctors and family only")
     fake = {"name": "Aspirin", "dose": "1 pill", "times": ["08:00", "20:00"],
@@ -667,7 +683,7 @@ def read_label(photo: UploadFile = File(...), u=Depends(me)):
     # fake only while ai.read_label is unwritten. On a real failure, never return a made-up medicine
     # someone could save without noticing: error out with the reason, and the app/dashboard say "fill it in by hand".
     try:
-        return ai.read_label(photo.file.read())
+        return ai.read_label(image)
     except NotImplementedError:
         return fake
     except Exception as e:

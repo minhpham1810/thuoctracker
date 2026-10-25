@@ -8,9 +8,6 @@ import { Button, Card, colors, Dot, Title } from './ui';
 const ImagePicker = Platform.OS === 'web' || requireOptionalNativeModule('ExponentImagePicker')
   ? require('expo-image-picker')
   : null;
-// SDK 58's fetch rejects React Native's old {uri, name, type} form parts ("Unsupported FormDataPart
-// implementation"); expo-file-system's File is a Blob, which it accepts.
-const FsFile = Platform.OS !== 'web' && requireOptionalNativeModule('FileSystem') ? require('expo-file-system').File : null;
 
 const SLOTS = [1, 2, 3, 4, 5, 6, 7]; // boxes 1-3 top row, 4-6 middle row, 7 the long bottom box
 const COLORS = ['white', 'blue', 'red', 'yellow', 'green', 'orange', 'pink', 'purple'];
@@ -37,18 +34,25 @@ export default function AddMedicine({ patientId, meds, autoScan, onDone }) {
     if (camera && Platform.OS !== 'web' && !(await ImagePicker.requestCameraPermissionsAsync()).granted) {
       return setError('Allow camera access to scan a label.');
     }
-    const opts = { mediaTypes: ['images'], quality: 0.6 }; // smaller upload, still readable
+    // base64: the phone sends the photo as JSON text. SDK 58's fetch rejects multipart file parts on phones
+    // ("Unsupported FormDataPart implementation"), and base64 needs no File/Blob support at all.
+    const opts = { mediaTypes: ['images'], quality: 0.6, base64: Platform.OS !== 'web' }; // smaller upload, still readable
     const res = camera ? await ImagePicker.launchCameraAsync(opts) : await ImagePicker.launchImageLibraryAsync(opts);
     if (res.canceled) return;
     const asset = res.assets[0];
     setPhoto(asset.uri);
     setReading(true);
     try {
-      const form = new FormData();
-      if (Platform.OS === 'web') form.append('photo', await (await fetch(asset.uri)).blob(), 'label.jpg');
-      else if (FsFile) form.append('photo', new FsFile(asset.uri));
-      else form.append('photo', { uri: asset.uri, name: asset.fileName ?? 'label.jpg', type: asset.mimeType ?? 'image/jpeg' });
-      const d = await api.readLabel(form); // nulls for anything the AI couldn't read
+      let d; // nulls for anything the AI couldn't read
+      if (Platform.OS === 'web') {
+        const form = new FormData(); // browsers upload files fine
+        form.append('photo', await (await fetch(asset.uri)).blob(), 'label.jpg');
+        d = await api.readLabel(form);
+      } else if (asset.base64) {
+        d = await api.readLabelBase64(asset.base64);
+      } else {
+        throw new Error('the camera gave no photo data');
+      }
       setF((x) => ({
         ...x,
         name: d.name ?? x.name,

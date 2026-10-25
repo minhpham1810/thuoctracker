@@ -53,6 +53,8 @@ export const api = {
   addMedicine: (m) => call('POST', '/medicines', m), // doctor or family
   // label photo (FormData field "photo") -> {name, dose, times, expiration, quantity}; Gemini can take a while
   readLabel: (form) => call('POST', '/ai/label', null, { form, timeout: 150000 }), // local Ollama on a CPU laptop is slow
+  // phones: the same, with the photo as base64 JSON (SDK 58's fetch can't send multipart files from a phone)
+  readLabelBase64: (image) => call('POST', '/ai/label64', { image }, { timeout: 150000 }),
   doses: (pid) => call('GET', `/patients/${pid}/doses`),
   took: (doseId) => call('POST', `/doses/${doseId}/taken`),
   cabinetState: (pid) => call('GET', `/cabinet/${pid}/state`),

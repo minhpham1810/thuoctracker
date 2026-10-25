@@ -4,6 +4,9 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 01:55 Minh Dau (app + backend): **Phone label scans: the real fix.** The 01:30 `File` workaround still failed on phones with "Unsupported FormDataPart implementation". The app now skips form uploads entirely: the picker returns the photo as base64, and the app sends it as JSON to the new `POST /ai/label64` `{image}`, which runs exactly the same label reading as `/ai/label`. Tested end to end with a phone-size photo; all 4 checks pass. The web dashboard keeps using `/ai/label`, which works in browsers.
+  - Everyone: `git pull`, restart the backend, and reload the app (`r` in Expo).
+
 - 01:45 Thanh (cabinet screen + pi; 2 backend routes): **The screen's "Ask a question" works on the Pi now.** The kiosk's browser can't use the ESP32's mic, so when the browser has no mic the button asks the cabinet instead: `POST /cabinet/{id}/ask` queues an `ask` command, the Pi says "I'm listening", records on the ESP32, calls `/ai/ask`, plays the answer; the screen shows "I'm listening" / "Let me check" and then the answer from `GET /cabinet/{id}/answer`. Laptops with a mic still record in the browser. Contract table updated.
   - Minh Dau: I added those two routes and a `cabinet_answer` table (one row per patient: last answer text + time) to `backend/main.py` / `db.py`; `/ai/ask` now also saves its answer there, and `/cabinet/{id}/command` drops an `ask` older than 30 s. Also in `seed()`'s TRUNCATE.
   - Thanh: on the Pi `git pull` and restart `cabinet.service` (it runs the ask), then reload the kiosk.
@@ -149,6 +152,7 @@ App and dashboard routes need `Authorization: Bearer <token>` (401 without it). 
 | `PATCH /medicines/{id}` (any fields) | the patient's doctor | updated `Medicine` (refill = `pills_left`) |
 | `DELETE /medicines/{id}` | the patient's doctor | `{ok}`; its doses go too |
 | `POST /doses/{id}/taken` | the patient | `DoseLog` (phone "I took it") |
+| `POST /ai/label64` `{image: <base64>}` | doctors and family | same as `/ai/label`, photo as base64 JSON (the phone app uses this; SDK 58's fetch can't send multipart files from a phone) |
 | `POST /ai/label` (photo) | doctors and family | `{name, dose, times, expiration, quantity}` draft for the add-medicine form (`quantity` = pills in the bottle; any field may be `null`) |
 
 ### Cabinet: two pollers, two routes
