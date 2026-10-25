@@ -7,12 +7,12 @@ import usb_cdc
 import usb_hid
 import usb_midi
 
-# Editing mode (the CIRCUITPY drive comes back): hold the volume knob pressed in while pressing
-# RESET. (Not the BOOT button: holding BOOT through a reset starts the chip's own USB bootloader.)
-knob = digitalio.DigitalInOut(microcontroller.pin.GPIO15)  # encoder SW, Feather A3
-knob.switch_to_input(pull=digitalio.Pull.UP)
-editing = not knob.value
-knob.deinit()
+# Hold the rotary knob's SW button (Feather A3/GPIO15) while tapping RESET.
+# Do NOT use GPIO0/BOOT: holding it during reset enters the ESP32 ROM downloader.
+edit_button = digitalio.DigitalInOut(microcontroller.pin.GPIO15)
+edit_button.switch_to_input(pull=digitalio.Pull.UP)
+editing = not edit_button.value
+edit_button.deinit()
 
 # The S3 has only 5 USB IN endpoints (the control one included): too few for the drive and
 # two serial ports at once, so it would fall back to safe mode. Normal run: the console plus
@@ -24,3 +24,7 @@ if not editing:
     storage.disable_usb_drive()
     storage.remount("/", readonly=False)
     usb_cdc.enable(console=True, data=True)
+else:
+    usb_cdc.enable(console=True, data=False)
+    storage.enable_usb_drive()
+    storage.remount("/", readonly=True)  # host may edit; CircuitPython may not write
