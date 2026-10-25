@@ -226,22 +226,26 @@ def play_pcm(size):
         drain(max(size, 0))
         raise ValueError("audio must be whole 16-bit samples")
     try:
-        samples = array.array("h", bytes(size))  # bytes are taken as raw samples: size // 2 of them
+        raw = bytearray(size)
     except Exception:  # out of memory, or anything else: the audio must still be read off USB
         drain(size)
         raise
-    service_controls()
-    # One read for the whole answer keeps the samples aligned (a short read could split one).
-    # USB moves ~100 KB in well under a second; the knob's turns are still counted meanwhile
-    # (rotaryio counts in the background) and applied right after.
-    link.timeout = 10 + size / 20000
-    try:
-        got = link.readinto(samples) or 0
-    finally:
-        link.timeout = 0
-    service_controls()
+    # Loop ourselves: one big readinto() with a timeout stops at about half (CircuitPython's loop
+    # compares what it has read with what is left), and a bytearray takes any byte count.
+    view = memoryview(raw)
+    got = 0
+    deadline = time.monotonic() + 10 + size / 20000
+    while got < size and time.monotonic() < deadline:
+        n = link.readinto(view[got:]) or 0  # timeout 0: whatever has arrived
+        got += n
+        if not n:
+            service_controls()
+            time.sleep(0.001)  # lets USB take in more
     if got != size:
+        drain(size - got)
         raise OSError("got %d of %d audio bytes" % (got, size))
+    samples = array.array("h", raw)  # bytes are taken as raw samples: size // 2 of them
+    del raw, view
     sound = audiocore.RawSample(samples, sample_rate=RATE)
     try:
         mixer.voice[0].play(sound)
