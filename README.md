@@ -103,7 +103,7 @@ cd app && npm install && cd ..
 # Windows: .venv\Scripts\python -m uvicorn backend.main:app --reload --host 0.0.0.0
 ```
 
-API docs: `http://localhost:8000/docs`. Data is in Tiger Data (`DATABASE_URL` in `.env`). **Run only one backend per database**: a second one (e.g. a teammate's laptop with the same `.env`) runs its own scheduler and double-sends alerts. Check the API end to end with `.venv/bin/python -m backend.test_api` (resets the demo data). Restart after editing `.env` (`--reload` only watches `.py`).
+API docs: `http://localhost:8000/docs`. Data is in Tiger Data (`DATABASE_URL` in `.env`). Several backends can share the database (e.g. two laptops with the same `.env`): only one runs the scheduler, the others take over if it stops. Check the API end to end with `.venv/bin/python -m backend.test_api` (resets the demo data). Restart after editing `.env` (`--reload` only watches `.py`).
 
 **2. Web: doctor dashboard + cabinet screen (port 3000)**
 

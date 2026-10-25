@@ -59,6 +59,35 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at timestamp NOT NULL
 );
 DROP TABLE IF EXISTS push_tokens;
+-- Several backends can run against this database at once, so the "right now" state lives here too:
+-- Pi commands, what the cabinet screen shows, photo counts, alerts already sent, reminder times.
+CREATE TABLE IF NOT EXISTS cabinet_commands (
+  id serial PRIMARY KEY,
+  patient_id int NOT NULL,
+  dose_id int,
+  opens_door boolean NOT NULL DEFAULT false,
+  cmd jsonb NOT NULL
+);
+CREATE TABLE IF NOT EXISTS cabinet_state (patient_id int PRIMARY KEY, state jsonb NOT NULL);
+CREATE TABLE IF NOT EXISTS photo_counts (
+  dose_id int NOT NULL, phase text NOT NULL, count int,
+  PRIMARY KEY (dose_id, phase)
+);
+CREATE TABLE IF NOT EXISTS alerts_sent (kind text NOT NULL, medicine_id int NOT NULL, PRIMARY KEY (kind, medicine_id));
+ALTER TABLE doses ADD COLUMN IF NOT EXISTS reminded_at timestamp;
+-- one row: the backend that runs the scheduler. Another takes over when the heartbeat goes stale.
+CREATE TABLE IF NOT EXISTS scheduler_lease (
+  id int PRIMARY KEY CHECK (id = 1),
+  holder text NOT NULL,
+  heartbeat timestamptz NOT NULL,  -- the database's clock, so laptop clocks don't matter
+  last_tick timestamp NOT NULL
+);
+-- one dose per medicine per pill time, even if two schedulers overlap for a moment
+DO $$ BEGIN
+  CREATE UNIQUE INDEX IF NOT EXISTS doses_one_per_time ON doses (medicine_id, due_at);
+EXCEPTION WHEN unique_violation THEN
+  RAISE WARNING 'duplicate doses already exist, doses_one_per_time not created';
+END $$;
 """
 
 

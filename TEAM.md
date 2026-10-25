@@ -4,6 +4,14 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 20:00 Minh Dau (backend): **Several backends can now run at the same time on the shared database.**
+  - **One scheduler:** only one backend runs it, whichever holds the `scheduler_lease` row in the database. If that laptop stops, another backend takes over within about 15 s and catches up on doses due in the gap. `GET /health` returns `"scheduler": true` on the one running it.
+  - **Shared state:** the Pi command queue, cabinet screen state, photo counts, "alerts already sent" and reminder times moved from process memory into tables (`cabinet_commands`, `cabinet_state`, `photo_counts`, `alerts_sent`, `doses.reminded_at`). The Pi, the cabinet screen and the dashboard can each talk to any backend.
+  - **No duplicates:** each scheduler step is a conditional write, and the database allows only one dose per medicine per pill time (`doses_one_per_time`). Even if two schedulers overlap briefly, nothing is sent twice.
+  - **Tested** with two backends at once against a throwaway schema, never the real tables: pill time on B reached the Pi via A; "I took it" on B showed on A; missed and expiring alerts went out exactly once to family and to doctor; after hard-killing the scheduler backend, the other took over.
+  - No contract change for the Pi, web or app. New tables are created on the first start of the new code.
+  - Everyone: keep laptop clocks on automatic time. Dose times still use each laptop's local clock.
+
 - 19:45 Thanh (pi + cabinet screen): **Cabinet sign-in now accepts any patient account** (doctor/family still refused). `pi/kiosk.sh` opens plain `/cabinet`; an old `?hw=1` URL also works. Heads-up: the Pi's doors, speaker and camera still follow `PATIENT_ID` in `pi/.env`, so sign the screen in as that same patient (Grandma Lan = 1) or the screen and the hardware will show different people. `?patient=N` still skips the sign-in.
 - 19:25 Thanh (pi + cabinet screen): **Cabinet sign-in: a one-time setup on the Pi.** `/cabinet?hw=N` (what `pi/kiosk.sh` now opens; N = `PATIENT_ID` in `pi/.env`) asks once for patient N's email + password on a big built-in keyboard and remembers it; only that patient's account is accepted, so the screen always matches the Pi's boxes. Doctor/family accounts are refused; the login session is ended right away (the cabinet routes stay login-free). Menu has **Switch patient** (Cancel, or it goes back after 1 min idle). `/cabinet?patient=N` still works with no sign-in, for laptops and the demo. `kiosk.sh` dropped `--incognito` so the sign-in survives reboots. No backend change.
   - Thanh: on the Pi, `git pull`, then restart the kiosk (`pkill chromium`) and sign in once as lan@demo.com.
@@ -82,7 +90,7 @@ Minh Dau's first job is making **every route below return fake data within the f
 
 ### Accounts and auth
 
-Data lives in Tiger Data (Postgres, `DATABASE_URL` in `.env`). **Run only one backend per database**: two backends both run the scheduler and double-send (a backend with a different clock marks every new dose missed at once).
+Data lives in Tiger Data (Postgres, `DATABASE_URL` in `.env`). **Several backends can run against one database at once.** Only one runs the scheduler (whoever holds the `scheduler_lease` row; another takes over within ~15 s if it stops), and the Pi queue, cabinet screen state and photo counts are in the database, so the Pi, screen and dashboard can each talk to any backend. `GET /health` says `"scheduler": true` on the one running it. Keep laptop clocks on automatic time.
 
 One `users` table, one role per account. Patient: `age`, `doctor_id`. Family: `patient_id`. Demo accounts (password `demo1234`): `doctor@demo.com`, `lan@demo.com` (patient 1), `minh@demo.com` (Lan's family).
 

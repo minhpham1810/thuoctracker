@@ -13,6 +13,7 @@ import hashlib
 import hmac
 import os
 import secrets
+import socket
 from contextlib import asynccontextmanager
 from datetime import date, datetime, time, timedelta
 from typing import Literal, Optional
@@ -22,6 +23,7 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from psycopg.types.json import Jsonb
 from pydantic import TypeAdapter
 
 import ai
@@ -40,9 +42,12 @@ DEMO_PASSWORD = "demo1234"  # every seeded account
 AUDIO_DIR = "audio"  # MP3s from ai.speak(), served at /audio/
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
-# Not in the DB on purpose: Pi command queue, cabinet screen state, photo counts, reminder times,
-# alerts already sent. All of it is about the dose happening right now.
-mem: dict = {}
+# Several backends may run against the same database. Everything they share is in the DB; only the one holding
+# scheduler_lease runs the scheduler, and another takes over when its heartbeat is LEASE_STALE old.
+HOLDER = f"{socket.gethostname()}-{os.getpid()}-{secrets.token_hex(3)}"
+LEASE_STALE = timedelta(seconds=15)
+CATCH_UP = timedelta(minutes=1)  # on takeover, start doses the old scheduler missed, at most this far back
+leader = False  # does this backend run the scheduler right now (shown in /health)
 
 
 @asynccontextmanager
@@ -57,14 +62,21 @@ async def lifespan(app: FastAPI):
         # accounts made before passwords existed get the demo password
         for r in q("SELECT id FROM users WHERE password_hash IS NULL"):
             q("UPDATE users SET password_hash = %s WHERE id = %s", hash_password(DEMO_PASSWORD), r["id"])
-        # a restart (or --reload) must not re-send alerts for conditions that were already alerted
-        today = date.today()
-        meds = all_medicines()
-        reset_mem({("low_pills", m.id) for m in meds if m.pills_left < 5}
-                  | {("expiring_soon", m.id) for m in meds if m.expiration - today <= timedelta(days=7)})
+        # first start since alerts_sent existed: conditions alerted before then must not re-send
+        if q1("SELECT 1 FROM alerts_sent LIMIT 1") is None:
+            today = date.today()
+            for m in all_medicines():
+                if m.pills_left < 5:
+                    claim_alert(("low_pills", m.id))
+                if m.expiration - today <= timedelta(days=7):
+                    claim_alert(("expiring_soon", m.id))
     task = asyncio.create_task(scheduler())
     yield
     task.cancel()
+    try:
+        q("DELETE FROM scheduler_lease WHERE holder = %s", HOLDER)  # hand the scheduler over right away
+    except Exception:
+        pass
     pool.close()  # else --reload waits 5 s on the pool's threads
 
 
@@ -73,25 +85,14 @@ app = FastAPI(title="ThuocTracker", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
-def reset_mem(sent: set):
-    mem.clear()
-    mem.update(
-        commands={},  # patient_id -> list of pending Pi commands
-        state={},     # patient_id -> what the cabinet screen shows
-        counts={},    # dose_id -> {"before": n, "after": n}
-        reminded={},  # dose_id -> last reminder time
-        sent=sent,    # (alert type, medicine_id) already alerted
-        last_tick=datetime.now(),
-    )
-
-
 def seed():
     """Wipe the DB (and every login) and load the demo people. Password for all: DEMO_PASSWORD."""
     today = date.today()
     now = datetime.now()
     pw = hash_password(DEMO_PASSWORD)
     with pool.connection() as c, c.transaction():
-        c.execute("TRUNCATE users, medicines, doses, alerts, messages, sessions RESTART IDENTITY CASCADE")
+        c.execute("TRUNCATE users, medicines, doses, alerts, messages, sessions, cabinet_commands, cabinet_state,"
+                  " photo_counts, alerts_sent RESTART IDENTITY CASCADE")
         cur = c.cursor()
         # patients keep ids 1-3: the cabinet screen and the Pi use ?patient=1. Doctor first so FKs resolve.
         cur.executemany(
@@ -128,7 +129,7 @@ def seed():
             (5, 4, "Dr. Nguyen, Grandma seems tired after the new Metformin.", now - timedelta(hours=3), now),
             (4, 5, "Thanks for telling me. Let's talk at her visit on Friday.", now - timedelta(hours=2), now),
         ])
-    reset_mem({("low_pills", 2)})  # the seeded low_pills alert above
+        c.execute("INSERT INTO alerts_sent (kind, medicine_id) VALUES ('low_pills', 2)")  # the seeded alert above
 
 
 # --- Auth ----------------------------------------------------------------------
@@ -245,8 +246,9 @@ def idle_state() -> dict:
 
 
 def set_state(patient_id: int, mode: str, dose: DoseLog, m: Medicine, message: str):
-    mem["state"][patient_id] = {"mode": mode, "dose_id": dose.id, "slot": m.slot,
-                                "medicine": m.name, "color": m.color, "message": message}
+    state = {"mode": mode, "dose_id": dose.id, "slot": m.slot, "medicine": m.name, "color": m.color, "message": message}
+    q("INSERT INTO cabinet_state (patient_id, state) VALUES (%s, %s)"
+      " ON CONFLICT (patient_id) DO UPDATE SET state = EXCLUDED.state", patient_id, Jsonb(state))
 
 
 _unset = object()
@@ -301,17 +303,18 @@ def mark_taken(dose: DoseLog, method: Literal["camera", "screen"]) -> DoseLog:
 
 
 def push_command(patient_id: int, cmd: dict):
-    mem["commands"].setdefault(patient_id, []).append(cmd)
+    q("INSERT INTO cabinet_commands (patient_id, dose_id, opens_door, cmd) VALUES (%s, %s, %s, %s)",
+      patient_id, cmd.get("dose_id"), "open_slot" in cmd, Jsonb(cmd))
 
 
 def door_queued(patient_id: int, dose_id: int) -> bool:
-    return any(c["dose_id"] == dose_id and "open_slot" in c for c in mem["commands"].get(patient_id, []))
+    return q1("SELECT 1 FROM cabinet_commands WHERE patient_id = %s AND dose_id = %s AND opens_door",
+              patient_id, dose_id) is not None
 
 
 def drop_door_commands(patient_id: int, dose_id: int):
     """Dose is settled: queued reminders must not reopen the door."""
-    queue = mem["commands"].get(patient_id, [])
-    queue[:] = [c for c in queue if not (c["dose_id"] == dose_id and "open_slot" in c)]
+    q("DELETE FROM cabinet_commands WHERE patient_id = %s AND dose_id = %s AND opens_door", patient_id, dose_id)
 
 
 def dose_log(patient_id: int) -> list[dict]:
@@ -344,16 +347,27 @@ def add_alert(type: str, to: Literal["doctor", "family"], p: Patient, message: s
     push_to(to, p, "ThuocTracker", message)
 
 
+def claim_alert(key: tuple) -> bool:
+    """Record (alert type, medicine_id) as alerted. False if it already was (by this or another backend)."""
+    return bool(q("INSERT INTO alerts_sent (kind, medicine_id) VALUES (%s, %s) ON CONFLICT DO NOTHING RETURNING kind",
+                  *key))
+
+
 def remind(dose: DoseLog, m: Medicine):
-    mem["reminded"][dose.id] = datetime.now()
+    """Open the box and say it's pill time. Callers record doses.reminded_at."""
     if door_queued(m.patient_id, dose.id):  # Pi hasn't picked up the last one yet (door cycle > repeat time)
         return
     say(m.patient_id, dose, f"Time for your {m.color} pill, {m.name}.", "time_for_pill", open_slot=m.slot)
     set_state(m.patient_id, "take", dose, m, f"Take your {m.color} pill now ({m.name})")
 
 
-def start_dose(m: Medicine, due_at: datetime) -> DoseLog:
-    dose = DoseLog(**q1("INSERT INTO doses (medicine_id, due_at) VALUES (%s, %s) RETURNING *", m.id, due_at))
+def start_dose(m: Medicine, due_at: datetime) -> Optional[DoseLog]:
+    """None if this dose already exists (another scheduler started it)."""
+    row = q1("INSERT INTO doses (medicine_id, due_at, reminded_at) VALUES (%s, %s, %s)"
+             " ON CONFLICT DO NOTHING RETURNING *", m.id, due_at, datetime.now())
+    if not row:
+        return None
+    dose = DoseLog(**row)
     remind(dose, m)
     p = get_patient(m.patient_id)
     push_to("patient", p, "Pill time", f"Time for your {m.color} pill ({m.name}).")
@@ -362,12 +376,13 @@ def start_dose(m: Medicine, due_at: datetime) -> DoseLog:
     return dose
 
 
-def tick():
-    """One scheduler pass: start due doses, remind, mark missed, low/expiring alerts."""
+def tick(last: datetime) -> datetime:
+    """One scheduler pass: start doses due since `last`, remind, mark missed, low/expiring alerts.
+    Every step is a conditional write, so two backends overlapping for a moment can't double-send."""
     now = datetime.now()
-    last, mem["last_tick"] = mem["last_tick"], now
     patients = {r["id"]: Patient(**r) for r in q("SELECT * FROM users WHERE role = 'patient'")}
     meds = {m.id: m for m in all_medicines()}
+    sent = {(r["kind"], r["medicine_id"]) for r in q("SELECT kind, medicine_id FROM alerts_sent")}
     for m in meds.values():
         p = patients[m.patient_id]
         for t in m.times:
@@ -375,21 +390,22 @@ def tick():
             if last < due <= now:
                 start_dose(m, due)
         low = ("low_pills", m.id)
-        if m.pills_left < 5 and low not in mem["sent"]:
-            mem["sent"].add(low)
+        if m.pills_left < 5 and low not in sent and claim_alert(low):
             add_alert("low_pills", "doctor", p, f"{p.name} has {m.pills_left} {m.name} left. Refill needed.")
             add_alert("low_pills", "family", p, f"{p.name} has only {m.pills_left} {m.name} left.")
-        elif m.pills_left >= 5:
-            mem["sent"].discard(low)  # refilled; alert again next time it runs low
+        elif m.pills_left >= 5 and low in sent:
+            q("DELETE FROM alerts_sent WHERE kind = %s AND medicine_id = %s", *low)  # refilled; alert again next time
         expiring = ("expiring_soon", m.id)
         if m.expiration - now.date() > timedelta(days=7):
-            mem["sent"].discard(expiring)  # new bottle; alert again when this one gets close
-        elif expiring not in mem["sent"]:
-            mem["sent"].add(expiring)
+            if expiring in sent:  # new bottle; alert again when this one gets close
+                q("DELETE FROM alerts_sent WHERE kind = %s AND medicine_id = %s", *expiring)
+        elif expiring not in sent and claim_alert(expiring):
             add_alert("expiring_soon", "family", p, f"{p.name}'s {m.name} expires on {m.expiration}.")
             add_alert("expiring_soon", "doctor", p, f"{p.name}'s {m.name} expires on {m.expiration}.")
-    for d in [DoseLog(**r) for r in q("SELECT * FROM doses WHERE status = 'pending'")]:
-        m = meds[d.medicine_id]
+    for r in q("SELECT * FROM doses WHERE status = 'pending'"):
+        d, m = DoseLog(**r), meds.get(r["medicine_id"])
+        if m is None:  # medicine deleted during this pass
+            continue
         if now - d.due_at >= MISSED_AFTER:
             if not q("UPDATE doses SET status = 'missed' WHERE id = %s AND status = 'pending' RETURNING id", d.id):
                 continue  # taken in the meantime
@@ -401,14 +417,45 @@ def tick():
             add_alert("missed", "doctor", p, f"{p.name} missed {m.name} ({d.due_at:%H:%M}).")
             # inform only: never tell the patient to take it late (could double up with the next dose)
             push_to("patient", p, "Missed pill", f"You missed your {d.due_at:%H:%M} {m.name}. Your family and doctor have been told.")
-        elif now - mem["reminded"].get(d.id, d.due_at) >= REMIND_EVERY:
+        elif now - (r["reminded_at"] or d.due_at) >= REMIND_EVERY and q(
+                "UPDATE doses SET reminded_at = %s WHERE id = %s AND status = 'pending'"
+                " AND coalesce(reminded_at, due_at) <= %s RETURNING id", now, d.id, now - REMIND_EVERY):
             remind(d, m)
+    return now
+
+
+# Take the lease if it's ours or stale; renew it if ours. Returns where the last pass ended (on takeover:
+# the old scheduler's, but no more than CATCH_UP ago). On a brand-new lease, start from now.
+LEASE_SQL = """
+INSERT INTO scheduler_lease (id, holder, heartbeat, last_tick) VALUES (1, %s, now(), %s)
+ON CONFLICT (id) DO UPDATE SET holder = EXCLUDED.holder, heartbeat = now(),
+  last_tick = CASE WHEN scheduler_lease.holder = EXCLUDED.holder THEN scheduler_lease.last_tick
+                   ELSE GREATEST(scheduler_lease.last_tick, %s) END
+WHERE scheduler_lease.holder = EXCLUDED.holder OR scheduler_lease.heartbeat < now() - %s
+RETURNING last_tick
+"""
+
+
+def scheduler_step():
+    global leader
+    now = datetime.now()
+    lease = q1(LEASE_SQL, HOLDER, now, now - CATCH_UP, LEASE_STALE)
+    if not lease:
+        if leader:
+            print("[scheduler] another backend runs the scheduler now")
+        leader = False
+        return
+    if not leader:
+        print(f"[scheduler] this backend runs the scheduler ({HOLDER})")
+    leader = True
+    done = tick(lease["last_tick"])
+    q("UPDATE scheduler_lease SET last_tick = %s WHERE holder = %s", done, HOLDER)
 
 
 async def scheduler():
     while True:
         try:
-            await asyncio.to_thread(tick)  # to_thread: DB and push calls block
+            await asyncio.to_thread(scheduler_step)  # to_thread: DB and push calls block
         except Exception as e:
             print(f"[scheduler] {e!r}")
         await asyncio.sleep(TICK_SECONDS)
@@ -416,7 +463,7 @@ async def scheduler():
 
 @app.get("/health")
 def health():
-    return {"ok": True}
+    return {"ok": True, "scheduler": leader}
 
 
 # --- Accounts ------------------------------------------------------------------
@@ -585,8 +632,9 @@ def delete_medicine(medicine_id: int, u=Depends(me)):
     q("DELETE FROM medicines WHERE id = %s", m.id)  # its doses go with it (ON DELETE CASCADE)
     for d in dose_ids:
         drop_door_commands(m.patient_id, d)
-    if mem["state"].get(m.patient_id, {}).get("dose_id") in dose_ids:
-        mem["state"].pop(m.patient_id)  # cabinet screen back to idle
+    # cabinet screen back to idle if it was showing one of these doses
+    q("DELETE FROM cabinet_state WHERE patient_id = %s AND (state->>'dose_id')::int = ANY(%s)",
+      m.patient_id, list(dose_ids))
     return {"ok": True}
 
 
@@ -624,15 +672,17 @@ def ask(patient_id: int, audio: UploadFile = File(...)):
 # --- Cabinet (login-free: the Pi and its touchscreen) ---------------------------
 @app.get("/cabinet/{patient_id}/command")
 def cabinet_command(patient_id: int):
-    """Pi only. Each command is handed out once."""
-    queue = mem["commands"].get(patient_id, [])
-    return queue.pop(0) if queue else {}
+    """Pi only. Each command is handed out once (SKIP LOCKED: two backends can't hand out the same one)."""
+    row = q1("DELETE FROM cabinet_commands WHERE id = (SELECT id FROM cabinet_commands WHERE patient_id = %s"
+             " ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING cmd", patient_id)
+    return row["cmd"] if row else {}
 
 
 @app.get("/cabinet/{patient_id}/state")
 def cabinet_state(patient_id: int):
     """Cabinet screen only. Read-only, safe to poll."""
-    return mem["state"].get(patient_id, idle_state())
+    row = q1("SELECT state FROM cabinet_state WHERE patient_id = %s", patient_id)
+    return row["state"] if row else idle_state()
 
 
 @app.get("/cabinet/{patient_id}/today")
@@ -657,23 +707,27 @@ def cabinet_photo(patient_id: int, dose_id: int, phase: Literal["before", "after
     """Pi sends before/after slot photos; after the 'after' photo we decide taken."""
     dose = get_dose(dose_id)
     m = get_medicine(dose.medicine_id)
-    counts = mem["counts"].setdefault(dose_id, {})
+    row = q1("SELECT count FROM photo_counts WHERE dose_id = %s AND phase = 'before'", dose_id)
+    before = row["count"] if row else None
     # fake count until ai.count_pills is ready: pretend one pill was removed
-    before = counts.get("before")
     fake = m.pills_left if phase == "before" or before is None else before - 1
     # real count failed -> None: don't guess, the patient taps "I took it" instead
-    counts[phase] = try_ai(ai.count_pills, photo.file.read(), fallback=fake, on_error=None)
-    before, after = counts.get("before"), counts.get("after")
-    if phase == "after" and before is not None and after is not None and before - after == 1:
+    count = try_ai(ai.count_pills, photo.file.read(), fallback=fake, on_error=None)
+    q("INSERT INTO photo_counts (dose_id, phase, count) VALUES (%s, %s, %s)"
+      " ON CONFLICT (dose_id, phase) DO UPDATE SET count = EXCLUDED.count", dose_id, phase, count)
+    if phase == "after" and before is not None and count is not None and before - count == 1:
         mark_taken(dose, "camera")
-    return {"count": counts[phase]}
+    return {"count": count}
 
 
 # --- Demo controls (login-free so the Pi team can curl them) --------------------
 @app.post("/demo/pill_time")
 def demo_pill_time(medicine_id: int) -> DoseLog:
     """Start a dose right now instead of waiting for its scheduled time."""
-    return start_dose(get_medicine(medicine_id), datetime.now())
+    dose = start_dose(get_medicine(medicine_id), datetime.now())
+    if dose is None:
+        raise HTTPException(409, "That dose already started")
+    return dose
 
 
 @app.post("/demo/reset")
