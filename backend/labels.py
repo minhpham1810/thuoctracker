@@ -567,7 +567,7 @@ def check(medicines: list[str]) -> dict:
     pairs.sort(key=lambda p: (min((rank[s["section"]] for s in p["label_says"]), default=50 if p["pathways"] else 99),
                               p["drugs"]))
     return {"medicines": [{"name": m["name"], "drug": m["drug"], "label": bool(m["label"])} for m in meds],
-            "pairs": pairs,
+            "pairs": pairs, "loaded": [l["drug"] for l in labels],  # for the dashboard's autocomplete
             "note": "From the FDA labels loaded and known pathways. A pair with nothing found means the loaded labels "
                     "don't name each other, not that the combination is safe. The doctor decides; nothing here changes a dose."}
 

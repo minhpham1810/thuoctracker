@@ -452,39 +452,111 @@
   .offline { margin: 16px 16px 0; }
 }
 
-/* Interactions and side effects (FDA labels): a quoted label sentence is the evidence, so it gets the space */
-.labels .small { font-size: 13px; margin-top: 8px !important; }
-.labels-add, .ask-labels form { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
-.labels-add .field, .ask-labels .field { flex: 1 1 320px; }
-.labels-add .btn, .ask-labels form .btn { min-height: 44px; }
-.labels .form-error { margin-top: 12px; }
-.pairs { list-style: none; padding: 0; display: grid; gap: 10px; margin-top: 16px !important; }
-.pair { padding: 14px 16px; border: 1px solid var(--line); border-left: 4px solid var(--tone, var(--line-2)); border-radius: var(--r-ctl); background: var(--paper); }
-.pair.tone-bad { --tone: var(--bad); } .pair.tone-warn { --tone: var(--warn); } .pair.tone-info { --tone: var(--teal); }
-.pair h4 { display: flex; flex-wrap: wrap; gap: 6px; font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+/* Drug safety (FDA labels). One sheet, two tabs. The quoted label sentence is the evidence, so it gets the space;
+   the tier badge says which label section it came from (that, not a score, decides the colour). */
+.labels-sheet { border: 1px solid var(--line); border-radius: var(--r-sheet); background: var(--paper); overflow: hidden; }
+.labels-tabs { display: flex; gap: 4px; padding: 6px 6px 0; border-bottom: 1px solid var(--line); background: var(--mist); }
+.labels-tabs button {
+  min-height: 42px; padding: 0 16px; border: 1px solid transparent; border-bottom: 0; border-radius: 10px 10px 0 0;
+  background: transparent; color: var(--ink-2); font: 600 14px var(--font-ui), sans-serif; cursor: pointer; margin-bottom: -1px;
+}
+.labels-tabs button:hover { color: var(--ink); }
+.labels-tabs button[aria-selected="true"] { background: var(--paper); border-color: var(--line); color: var(--teal-ink); }
+.lt-body { display: grid; gap: 14px; padding: 18px 20px 20px; }
+.labels .small { font-size: 13px; }
+
+/* the list being checked */
+.druglist { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.drug-chip {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 12px; border: 1px solid var(--line-2);
+  border-radius: 999px; background: var(--paper); font-size: 14px;
+}
+.drug-chip b { font-weight: 600; }
+.drug-chip.considered { border: 1.5px dashed var(--teal); background: var(--teal-wash); padding-right: 4px; }
+.chip-tag { font-size: 11px; font-weight: 700; color: var(--teal-ink); }
+.chip-tag.dim { color: var(--ink-2); font-weight: 500; }
+.chip-x { display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 50%; background: transparent; color: var(--teal-ink); cursor: pointer; }
+.chip-x:hover { background: color-mix(in srgb, var(--teal) 15%, transparent); }
+.chip-x .icon { width: 15px; height: 15px; }
+
+.labels-add, .ask-form { display: flex; gap: 8px; }
+.labels-add input, .ask-form input {
+  flex: 1; min-width: 0; min-height: 44px; padding: 0 14px; border: 1px solid var(--line-2); border-radius: var(--r-ctl);
+  background: var(--paper); color: var(--ink); font: 400 15px var(--font-ui), sans-serif;
+}
+.labels-add input::placeholder, .ask-form input::placeholder { color: #6f8388; }
+.labels-add input:focus, .ask-form input:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 22%, transparent); }
+.labels-add .btn, .ask-form .btn { min-height: 44px; min-width: 96px; }
+
+/* summary first, like the counts on Drugs.com and Medscape */
+.labels-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 12px 14px; border-radius: var(--r-ctl); background: var(--mist); font-size: 15px; }
+.labels-summary.has { background: var(--paper); border: 1px solid var(--line); }
+.counts { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.count { padding: 2px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; background: var(--tier-wash); color: var(--tier); }
+
+.tier-boxed, .tier-contra { --tier: var(--bad); --tier-wash: var(--bad-wash); }
+.tier-warning { --tier: var(--warn); --tier-wash: var(--warn-wash); }
+.tier-listed { --tier: var(--teal-ink); --tier-wash: var(--teal-wash); }
+.tier-mechanism { --tier: var(--ink-2); --tier-wash: var(--mist); }
+
+.pairs { list-style: none; padding: 0; display: grid; gap: 10px; }
+.pair { padding: 14px 16px 16px; border: 1px solid var(--line); border-top: 3px solid var(--tier); border-radius: var(--r-ctl); background: var(--paper); }
+.pair-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-bottom: 10px; }
+.pair h4 { display: flex; flex-wrap: wrap; gap: 6px; font-size: 16px; font-weight: 650; }
 .pair h4 span + span::before { content: "+"; margin-right: 6px; color: var(--ink-2); font-weight: 400; }
-.pair h4 .considered { color: var(--teal-ink); text-decoration: underline dotted; text-underline-offset: 3px; }
-.pair blockquote { margin: 0 0 8px; padding-left: 12px; border-left: 2px solid var(--line); }
-.pair blockquote p { font-size: 14px; }
-.pair blockquote footer { margin-top: 4px; color: var(--ink-2); font-size: 13px; }
-.pair a, .ask-labels a { color: var(--teal-ink); }
-.pathway { font-size: 14px; }
-.pathway small { color: var(--ink-2); margin-left: 4px; }
-.ask-labels { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
-.answer { margin-top: 16px; }
-.answer-text { font-size: 15px; line-height: 1.6; max-width: 72ch; }
+.pair h4 .considered { color: var(--teal-ink); }
+.tier-badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 8px; border-radius: 999px; background: var(--tier-wash); color: var(--tier); font-size: 13px; font-weight: 700; }
+.tier-badge .icon { width: 15px; height: 15px; }
+
+.quote { margin: 0 0 10px; }
+.quote blockquote { margin: 0; padding: 2px 0 2px 14px; border-left: 3px solid var(--tier, var(--line-2)); font-size: 15px; line-height: 1.55; max-width: 78ch; }
+.quote blockquote::before { content: "\201C"; }
+.quote blockquote::after { content: "\201D"; }
+.quote figcaption { margin-top: 6px; padding-left: 17px; color: var(--ink-2); font-size: 13px; }
+.quote a, .labels a { color: var(--teal-ink); }
+.quote a .icon { width: 12px; height: 12px; vertical-align: -1px; }
+.mechanism { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 8px 12px; border-radius: 8px; background: var(--mist); font-size: 14px; }
+.mech-name { font-weight: 700; font-size: 13px; color: var(--ink); }
+.mechanism small { color: var(--ink-2); margin-left: 4px; }
+.labels-none { display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: 14px; }
+.labels-none .icon { width: 16px; height: 16px; color: var(--ok); flex: none; }
+.labels-note { padding-top: 12px; border-top: 1px solid var(--line); color: var(--ink-2); font-size: 13px; }
+
+/* Ask the labels */
+.suggest { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; }
+.suggest-chip {
+  min-height: 34px; padding: 0 12px; border: 1px solid var(--line-2); border-radius: 999px; background: var(--paper);
+  color: var(--ink); font: 500 13px var(--font-ui), sans-serif; cursor: pointer; text-align: left;
+}
+.suggest-chip:hover { border-color: var(--teal); color: var(--teal-ink); background: var(--teal-wash); }
+.ask-wait { display: flex; align-items: center; gap: 10px; color: var(--ink-2); font-size: 14px; }
+.dots { width: 38px; height: 8px; background: radial-gradient(circle 4px, var(--teal) 98%, transparent) 0 50% / 10px 8px repeat-x; animation: dots 1s steps(4) infinite; }
+@keyframes dots { from { width: 0; } to { width: 40px; } }
+@media (prefers-reduced-motion: reduce) { .dots { animation: none; } }
+.answer { display: grid; gap: 12px; justify-items: start; }
+.answer > * { width: 100%; }
+.answer > .btn { width: auto; }
+.answer-q { font-size: 17px; font-weight: 650; }
+.label-warnings { padding: 12px 14px; border-radius: var(--r-ctl); background: var(--warn-wash); --tier: var(--warn); }
+.lw-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px !important; color: var(--warn); font-weight: 700; font-size: 14px; }
+.lw-head .icon { width: 16px; height: 16px; }
+.label-warnings .quote:last-child { margin-bottom: 0; }
+.ai-answer { padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--r-ctl); background: var(--paper); }
+.ai-tag { margin-bottom: 6px !important; color: var(--ink-2); font-size: 12px; font-weight: 700; }
+.answer-text { font-size: 15px; line-height: 1.65; max-width: 78ch; }
 .cite { display: inline-grid; place-items: center; min-width: 18px; height: 18px; margin: 0 1px; padding: 0 4px; border-radius: 5px;
   background: var(--teal-wash); font-size: 11px; font-weight: 700; text-decoration: none; vertical-align: 2px; }
-.sources { list-style: none; padding: 0; display: grid; gap: 6px; margin-top: 12px !important; }
-.sources details { border: 1px solid var(--line); border-radius: var(--r-ctl); background: var(--paper); }
-.sources summary { display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 14px; font-weight: 600; cursor: pointer; }
-.sources .n { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; background: var(--mist); font-size: 12px; }
+.sources { border: 1px solid var(--line); border-radius: var(--r-ctl); }
+.sources > summary { display: flex; align-items: center; gap: 8px; padding: 10px 14px; font-size: 14px; font-weight: 600; cursor: pointer; list-style: none; }
+.sources > summary::-webkit-details-marker { display: none; }
+.sources > summary .chev { margin-left: auto; width: 16px; height: 16px; transition: rotate .2s; }
+.sources[open] > summary .chev { rotate: 180deg; }
+.sources ol { list-style: none; display: grid; gap: 6px; padding: 0 10px 10px; }
+.sources ol details { border: 1px solid var(--line); border-radius: 8px; }
+.sources ol summary { display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-size: 14px; cursor: pointer; }
+.sources .n { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; background: var(--mist); font-size: 12px; font-weight: 700; }
 .sources li:target details { border-color: var(--teal); }
 .passage { padding: 0 12px; font-size: 13px; white-space: pre-line; max-height: 260px; overflow-y: auto; }
-.sources details .small { padding: 0 12px 10px; }
-.label-warnings { display: grid; gap: 6px; margin-bottom: 14px; padding: 12px 14px; border-radius: var(--r-ctl); background: var(--warn-wash); font-size: 14px; }
-.label-warnings b { color: var(--warn); }
-.label-warnings .icon { width: 16px; height: 16px; color: var(--warn); vertical-align: -3px; }
-.label-warnings small { color: var(--ink-2); margin-left: 4px; }
-.labels-result { margin-top: 14px !important; padding: 12px 14px; border-radius: var(--r-ctl); background: var(--paper); border: 1px solid var(--line); font-size: 14px; }
-.labels-result.hit { border-color: var(--teal); background: var(--teal-wash); }
+.sources ol details .small { padding: 6px 12px 10px; }
+@media (max-width: 640px) { .labels-add, .ask-form { flex-direction: column; } .lt-body { padding: 14px; } }
+.ai-answer.none { background: var(--mist); border-style: dashed; }
