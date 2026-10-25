@@ -29,6 +29,12 @@
         {
           "defaultChannel": "default"
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to use the camera to scan medicine labels."
+        }
       ]
     ],
     "extra": {

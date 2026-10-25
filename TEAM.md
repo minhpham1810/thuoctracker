@@ -4,6 +4,11 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 20:45 Minh Dau (app + backend): **Scan a medicine label with the phone.** In the mobile app, the doctor or the family opens the patient's Today tab → "Scan a label to add a medicine" → takes a photo (or picks one). Gemini fills in the name, dose, times, expiration and pills in the bottle. They choose a free box (1-7) and a pill color, check every field, and save. If a medicine with the same name is already there: "Aspirin was already added (box 1). Are you sure you want to add it again?"
+  - Contract: `POST /medicines` now allows the patient's **family** too, not only the doctor. `/ai/label` allows family and returns a new `quantity` field. Edit and delete stay doctor-only.
+  - Minh Pham: `LabelDraft` in `web/lib/api.ts` can gain `quantity: number | null` to prefill pills left on the dashboard (optional).
+  - The app now uses `expo-image-picker` (camera). It works in Expo Go now; the Android APK needs a rebuild (Minh Dau is starting one), and until then the old APK says "no camera support" instead of crashing.
+
 - 20:15 Thanh (pi): **ESP32-S3 audio unit over USB.** The speaker (MAX98357A) and mic (INMP441) are on the ESP32 (CircuitPython with `audioi2sin`); the Pi controls it over one USB cable. `pi/esp32/` has `boot.py` + `code.py` to copy onto the board and a setup README (stored sounds as 16 kHz mono WAV in `/sounds`). With `AUDIO=esp32` in `pi/.env`, `pi/main.py` plays the stored sounds and the ElevenLabs answers through it (MP3 converted on the Pi), `record_question` works, and an optional talk button on the ESP32 records a question -> `/ai/ask` -> plays the answer. Bench: `python pi/main.py esp32 ping|play good_job|rec 3|ask`. Tested against a fake board only; needs a run on the real one. New Pi dependency: `pyserial`.
   - Duy: copy `pi/esp32/boot.py` and `code.py` to the board, add the 4 WAVs, plug it into a black USB port on the Pi; set `BUTTON_PIN` in `code.py` if you wire a talk button.
 - 20:00 Minh Dau (backend): **Several backends can now run at the same time on the shared database.**
@@ -114,11 +119,11 @@ App and dashboard routes need `Authorization: Bearer <token>` (401 without it). 
 | Route | Who | Returns |
 |---|---|---|
 | `GET /patients/{id}/medicines`, `GET /patients/{id}/doses` | patient, their family, their doctor | `[Medicine]`, `[DoseLog]` newest first |
-| `POST /medicines` | the patient's doctor | `Medicine` with `id`; 409 if the slot is taken |
+| `POST /medicines` | the patient's doctor or family | `Medicine` with `id`; 409 if the slot is taken |
 | `PATCH /medicines/{id}` (any fields) | the patient's doctor | updated `Medicine` (refill = `pills_left`) |
 | `DELETE /medicines/{id}` | the patient's doctor | `{ok}`; its doses go too |
 | `POST /doses/{id}/taken` | the patient | `DoseLog` (phone "I took it") |
-| `POST /ai/label` (photo) | doctors | `{name, dose, times, expiration}` draft for the add-medicine form |
+| `POST /ai/label` (photo) | doctors and family | `{name, dose, times, expiration, quantity}` draft for the add-medicine form (`quantity` = pills in the bottle; any field may be `null`) |
 
 ### Cabinet: two pollers, two routes
 

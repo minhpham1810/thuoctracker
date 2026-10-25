@@ -232,6 +232,14 @@ def require_access(u, patient_id: int) -> Patient:
     return p
 
 
+def require_doctor_or_family(u, patient_id: int) -> Patient:
+    """The patient's doctor or their family (they load the cabinet at home)."""
+    p = get_patient(patient_id)
+    if not ((u.role == "doctor" and p.doctor_id == u.id) or (u.role == "family" and u.patient_id == p.id)):
+        raise HTTPException(403, "Only this patient's doctor or family can do that")
+    return p
+
+
 def require_doctor_of(u, patient_id: int) -> Patient:
     p = get_patient(patient_id)
     if u.role != "doctor" or p.doctor_id != u.id:
@@ -600,7 +608,7 @@ def slot_taken(patient_id: int, slot: int) -> bool:
 
 @app.post("/medicines")
 def add_medicine(m: Medicine, u=Depends(me)) -> Medicine:
-    require_doctor_of(u, m.patient_id)
+    require_doctor_or_family(u, m.patient_id)
     if slot_taken(m.patient_id, m.slot):
         raise HTTPException(409, f"slot {m.slot} already has a medicine")
     row = q1("INSERT INTO medicines (patient_id, name, dose, times, slot, pills_left, expiration, color)"
@@ -651,11 +659,11 @@ def dose_taken(dose_id: int, u=Depends(me)) -> DoseLog:
 # sync defs so FastAPI runs the slow Gemini/ElevenLabs calls in a thread
 @app.post("/ai/label")
 def read_label(photo: UploadFile = File(...), u=Depends(me)):
-    """Label photo -> Medicine draft fields. Doctors only."""
-    if u.role != "doctor":
-        raise HTTPException(403, "Doctors only")
+    """Label photo -> Medicine draft fields. Doctors and family (they scan bottles from the phone app)."""
+    if u.role not in ("doctor", "family"):
+        raise HTTPException(403, "Doctors and family only")
     fake = {"name": "Aspirin", "dose": "1 pill", "times": ["08:00", "20:00"],
-            "expiration": str(date.today() + timedelta(days=180))}
+            "expiration": str(date.today() + timedelta(days=180)), "quantity": 30}
     return try_ai(ai.read_label, photo.file.read(), fallback=fake)
 
 

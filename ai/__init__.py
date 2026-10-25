@@ -32,15 +32,16 @@ def _gemini(prompt: str, data: bytes = None, mime: str = None, as_json: bool = F
 
 
 def read_label(image: bytes) -> dict:
-    """Label photo -> {name, dose, times, expiration}. A draft: the doctor checks it before saving."""
+    """Label photo -> {name, dose, times, expiration, quantity}. A draft: a person checks it before saving."""
     out = json.loads(_gemini(
         "This is a prescription bottle label. Return JSON with exactly these keys: "
         '"name" (medicine name, e.g. "Aspirin"), "dose" (amount per dose, e.g. "1 pill"), '
         '"times" (list of 24h "HH:MM" times per day from the directions; once daily = ["08:00"], '
         'twice = ["08:00","20:00"], three times = ["08:00","14:00","20:00"]), '
-        '"expiration" ("YYYY-MM-DD", or null if not printed). Use null for anything unreadable.',
+        '"expiration" ("YYYY-MM-DD", or null if not printed), '
+        '"quantity" (number of pills in the bottle, e.g. QTY 30 -> 30, or null). Use null for anything unreadable.',
         image, "image/jpeg", as_json=True))
-    return {k: out.get(k) for k in ("name", "dose", "times", "expiration")}
+    return {k: out.get(k) for k in ("name", "dose", "times", "expiration", "quantity")}
 
 
 def count_pills(image: bytes) -> int:

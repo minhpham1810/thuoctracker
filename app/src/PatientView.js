@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import AddMedicine from './AddMedicine';
 import { api, day, hhmm } from './api';
 import { usePoll } from './hooks';
 import { Button, Card, colors, Dot, Pill, statusColor, Title } from './ui';
@@ -8,6 +9,7 @@ import { Button, Card, colors, Dot, Pill, statusColor, Title } from './ui';
 export default function PatientView({ user, patientId }) {
   const [tick, setTick] = useState(0); // bump to refetch right after "I took it"
   const [saving, setSaving] = useState(false);
+  const [adding, setAdding] = useState(false); // scan-a-label form open
   const [data, error] = usePoll(async () => {
     const [meds, doses, alerts, cabinet] = await Promise.all([
       api.medicines(patientId), api.doses(patientId), api.alerts(), api.cabinetState(patientId)]);
@@ -15,6 +17,10 @@ export default function PatientView({ user, patientId }) {
   }, [patientId, tick]);
 
   if (!data) return <Text style={s.loading}>{error ? `Can't reach the backend (${error})` : 'Loading…'}</Text>;
+  if (adding) {
+    return <AddMedicine patientId={patientId} meds={data.meds}
+                        onDone={(saved) => { setAdding(false); if (saved) setTick((x) => x + 1); }} />;
+  }
   const medName = Object.fromEntries(data.meds.map((m) => [m.id, m]));
   const big = user.role === 'patient';
   const myAlerts = data.alerts.filter((a) => user.role === 'doctor' ? a.to === 'doctor' : a.to === 'family');
@@ -42,6 +48,9 @@ export default function PatientView({ user, patientId }) {
       )}
 
       <Title>Medicines</Title>
+      {(user.role === 'doctor' || user.role === 'family') && (
+        <Button title="📷  Scan a label to add a medicine" kind="ghost" onPress={() => setAdding(true)} />
+      )}
       {data.meds.map((m) => (
         <Card key={m.id} style={s.row}>
           <Dot color={m.color} />

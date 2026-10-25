@@ -14,16 +14,16 @@ export const getBaseUrl = () => base;
 export const setToken = (t) => { token = t; };
 export const onUnauthorized = (fn) => { unauthorized = fn; }; // session gone: back to login
 
-async function call(method, path, body) {
+async function call(method, path, body, { timeout = 6000, form } = {}) {
   // fetch has no timeout of its own; a wrong IP would hang for a minute with no feedback
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 6000);
+  const timer = setTimeout(() => ctrl.abort(), timeout);
   try {
     const headers = {};
     if (body) headers['Content-Type'] = 'application/json';
     if (token) headers.Authorization = `Bearer ${token}`;
     const res = await fetch(base + path, {
-      method, signal: ctrl.signal, headers, body: body ? JSON.stringify(body) : undefined,
+      method, signal: ctrl.signal, headers, body: form ?? (body ? JSON.stringify(body) : undefined),
     });
     if (res.status === 401 && token) unauthorized?.();
     if (!res.ok) {
@@ -50,6 +50,9 @@ export const api = {
   sendMessage: (toId, text) => call('POST', '/messages', { to_id: toId, text }),
   alerts: () => call('GET', '/alerts'),
   medicines: (pid) => call('GET', `/patients/${pid}/medicines`),
+  addMedicine: (m) => call('POST', '/medicines', m), // doctor or family
+  // label photo (FormData field "photo") -> {name, dose, times, expiration, quantity}; Gemini can take a while
+  readLabel: (form) => call('POST', '/ai/label', null, { form, timeout: 60000 }),
   doses: (pid) => call('GET', `/patients/${pid}/doses`),
   took: (doseId) => call('POST', `/doses/${doseId}/taken`),
   cabinetState: (pid) => call('GET', `/cabinet/${pid}/state`),
