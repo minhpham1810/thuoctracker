@@ -84,6 +84,20 @@ CREATE TABLE IF NOT EXISTS scheduler_lease (
   heartbeat timestamptz NOT NULL,  -- the database's clock, so laptop clocks don't matter
   last_tick timestamp NOT NULL
 );
+-- appointments: a doctor's open times. Booking fills patient_id with one conditional UPDATE, so two people
+-- tapping the same time (even through different backends) can't both get it.
+CREATE TABLE IF NOT EXISTS appointment_slots (
+  id serial PRIMARY KEY,
+  doctor_id int NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  starts_at timestamp NOT NULL,
+  minutes int NOT NULL,
+  patient_id int REFERENCES users(id) ON DELETE SET NULL,  -- null = open
+  booked_by int REFERENCES users(id) ON DELETE SET NULL,   -- the patient, or family booking for them
+  reason text,
+  booked_at timestamp,
+  reminded_at timestamp,                                   -- the one-hour-before push went out
+  UNIQUE (doctor_id, starts_at)
+);
 -- one dose per medicine per pill time, even if two schedulers overlap for a moment
 DO $$ BEGIN
   CREATE UNIQUE INDEX IF NOT EXISTS doses_one_per_time ON doses (medicine_id, due_at);

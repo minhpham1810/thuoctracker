@@ -4,8 +4,16 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+<<<<<<< Updated upstream
 - 02:45 Thanh (ai, safety): **Voice answers can no longer invent doses.** With an empty or short log, Gemma 4 made doses up every time ("You took metformin at 8:00 AM and 8:00 PM" for Mrs. Hoa, who has no doses and no metformin: 6 of 6 tries), against the hard rule. `ai.answer` now: an empty log answers "There are no doses in your log yet." without the model; a question about a medicine not in the log answers "Your log doesn't mention X." from the data; and every medicine, pill color and time in the model's answer must be in the log (or be "now"), otherwise it says `DONT_KNOW` (and logs `[ai] answer not in the dose log (...)`). Tested: 11 canned cases (no model) plus live on Mrs. Hoa (empty) and Grandma Lan (true answers still pass).
   - Minh Pham: this is in your `ai/__init__.py` (`answer`, plus `NO_DOSES`, `COMMON_DRUGS`, `PILL_COLORS`, `TIME_RE`, `_ungrounded`); `python -m ai.test_ai` still passes.
+=======
+- 03:00 Minh Dau (backend + app): **Doctor appointments.** The doctor opens times (a day, from-to, 15/30/60 min per visit) and sees who booked and why. The patient, or their family on the patient's behalf, books a time with an optional reason and can cancel it (the time opens again). Pushes: the doctor on each booking or cancel, the patient and family when the doctor cancels, and an "Appointment soon" reminder one hour before. No double booking even across backends; patients never see other patients' bookings. Routes are in the contract under "Appointments"; new table `appointment_slots`, created on the next backend start. `/demo/reset` seeds 4 times tomorrow 9:00-11:00 for Dr. Nguyen, Grandma Lan booked at 10:00.
+  - App: the doctor gets tabs **Patients | Schedule**, the patient and family **Today | Visits | Care team**. Pull and reload (`r` in Expo).
+  - Minh Pham: optional, the dashboard could show the doctor's schedule from `GET /schedule` (same doctor login).
+  - Tested in a throwaway schema: 21 checks (privacy, family booking, double booking, cancel/reopen, doctor cancel notifies, past and overlapping times, roles, reminder once).
+
+>>>>>>> Stashed changes
 - 02:15 Thanh (pi, screen route): **The screen shows a voice answer as the cabinet says it** (it was ~2 s early: the Pi still had to download, convert and send the audio to the ESP32). `/ai/ask` no longer saves the answer for the screen; the Pi posts it to the new `POST /cabinet/{id}/answer` right when the ESP32 has the audio, or anyway if playback fails. Contract table updated.
   - Minh Dau: that route is in `backend/main.py` next to `GET /cabinet/{id}/answer`; `/ai/ask` is back to just returning `{text, audio_url}`.
   - Thanh: on the Pi `git pull` and `sudo systemctl restart cabinet.service`.
@@ -161,6 +169,20 @@ App and dashboard routes need `Authorization: Bearer <token>` (401 without it). 
 | `POST /doses/{id}/taken` | the patient | `DoseLog` (phone "I took it") |
 | `POST /ai/label64` `{image: <base64>}` | doctors and family | same as `/ai/label`, photo as base64 JSON (the phone app uses this; SDK 58's fetch can't send multipart files from a phone) |
 | `POST /ai/label` (photo) | doctors and family | `{name, dose, times, expiration, quantity}` draft for the add-medicine form (`quantity` = pills in the bottle; any field may be `null`) |
+
+### Appointments
+
+The doctor opens times; the patient, or their family, books one. Booking is one conditional `UPDATE`, so two people (or two backends) can't both get the same time. Patients and family never see other patients' bookings.
+
+| Route | Who | Returns |
+|---|---|---|
+| `GET /schedule` | logged in | `[Appointment]` `{id, doctor_id, doctor_name, starts_at, minutes, patient_id, patient_name, booked_by, reason}`, today + 14 days. Doctor: all their times, open (`patient_id: null`) and booked. Patient/family: the doctor's open future times + the patient's own visits |
+| `POST /availability` `{day: "YYYY-MM-DD", start: "09:00", end: "12:00", minutes: 15\|20\|30\|45\|60}` | doctor | `{added: [Appointment], skipped: n}`: one time every `minutes`; past times and overlaps are skipped |
+| `POST /slots/{id}/book` `{patient_id?, reason?}` | the patient, or their family (`patient_id` = their patient) | `Appointment`; 409 if just taken or past. Pushes the doctor, and the rest of the patient's circle |
+| `POST /slots/{id}/cancel` | the patient or their family | `Appointment` (open again); 409 if not booked or already started. Pushes the doctor + circle |
+| `DELETE /slots/{id}` | the doctor | `{ok}`; if it was booked, the patient + family get "Appointment cancelled" |
+
+The scheduler pushes "Appointment soon" to the patient and family one hour before each visit, once.
 
 ### Cabinet: two pollers, two routes
 

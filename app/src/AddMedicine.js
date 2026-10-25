@@ -1,8 +1,8 @@
 import { requireOptionalNativeModule } from 'expo';
 import { useEffect, useState } from 'react';
-import { Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { api } from './api';
-import { Button, Capsule, colors, ErrorText, Field, Section } from './ui';
+import { ask, Button, Capsule, colors, ErrorText, Field, Section } from './ui';
 
 // The Android build made before expo-image-picker was added has no camera module: say so instead of crashing.
 const ImagePicker = Platform.OS === 'web' || requireOptionalNativeModule('ExponentImagePicker')
@@ -86,7 +86,7 @@ export default function AddMedicine({ patientId, meds, autoScan, onDone }) {
       // fresh list: someone else may have added it a moment ago
       const current = await api.medicines(patientId);
       const dup = current.find((x) => x.name.trim().toLowerCase() === m.name.toLowerCase());
-      if (dup && !(await confirm(`${dup.name} was already added (box ${dup.slot}). Are you sure you want to add it again?`))) {
+      if (dup && !(await ask('Already added', `${dup.name} was already added (box ${dup.slot}). Are you sure you want to add it again?`, 'Add again'))) {
         setSaving(false);
         return;
       }
@@ -172,15 +172,6 @@ export default function AddMedicine({ patientId, meds, autoScan, onDone }) {
               disabled={saving || reading} style={{ marginTop: 20 }} />
     </ScrollView>
   );
-}
-
-// Alert.alert buttons don't work in a browser
-function confirm(message) {
-  if (Platform.OS === 'web') return Promise.resolve(window.confirm(message));
-  return new Promise((resolve) => Alert.alert('Already added', message, [
-    { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-    { text: 'Add again', onPress: () => resolve(true) },
-  ], { cancelable: true, onDismiss: () => resolve(false) }));
 }
 
 const s = StyleSheet.create({

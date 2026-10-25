@@ -8,10 +8,11 @@ import { useNotifyNew, usePoll } from './src/hooks';
 import Login from './src/Login';
 import { onBanner, setupNotifications } from './src/notify';
 import PatientView from './src/PatientView';
+import Schedule from './src/Schedule';
 import People from './src/People';
 import { clearSession, loadSession, saveSession } from './src/session';
 import SignUp from './src/SignUp';
-import { colors, Logo, Tabs } from './src/ui';
+import { clock, colors, fmtDay, Logo, Tabs } from './src/ui';
 
 // Restore the last login before the first render, so the app opens where it was.
 function restore() {
@@ -68,9 +69,10 @@ export default function App() {
   } else if (user) {
     const people = <People user={user} onOpen={setOther} />;
     // patient and family: today's pills come first, like the cabinet; the care team is one tap away
+    const visits = <Schedule user={user} />;
     body = patientId
-      ? <Switcher tabs={{ Today: <PatientView user={user} patientId={patientId} />, 'Care team': people }} />
-      : people;
+      ? <Switcher tabs={{ Today: <PatientView user={user} patientId={patientId} />, Visits: visits, 'Care team': people }} />
+      : <Switcher tabs={{ Patients: people, Schedule: visits }} />;
   }
   const subtitle = other ? (other.role === 'patient' ? 'Patient' : other.role === 'family' ? 'Family' : 'Doctor')
     : user?.role === 'doctor' ? 'Your patients and their families' : user?.role === 'family' ? 'Family account' : 'Your medicine cabinet';
@@ -153,6 +155,14 @@ async function collectEvents(user) {
   }
   for (const a of alerts) {
     if (a.to === user.role) out.push({ id: `a${a.id}`, title: 'ThuocTracker', body: a.message });
+  }
+  if (user.role === 'doctor') {
+    for (const x of await api.schedule()) {
+      if (x.patient_id) {
+        out.push({ id: `b${x.id}-${x.patient_id}`, title: 'New appointment',
+                   body: `${x.patient_name}, ${fmtDay(x.starts_at)} at ${clock(x.starts_at.slice(11, 16))}` });
+      }
+    }
   }
   if (user.role === 'family') {
     const c = await api.cabinetState(user.patient_id);

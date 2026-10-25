@@ -110,6 +110,33 @@ class LabelPhoto(BaseModel):
     image: str = Field(min_length=1)
 
 
+class Availability(BaseModel):
+    """A doctor opens appointment times on one day: from start to end, one every `minutes`."""
+    day: date
+    start: HHMM
+    end: HHMM
+    minutes: Literal[15, 20, 30, 45, 60] = 30
+
+
+class Appointment(BaseModel):
+    """One appointment time. patient_id None = open for booking."""
+    id: int
+    doctor_id: int
+    doctor_name: str
+    starts_at: datetime
+    minutes: int
+    patient_id: Optional[int] = None
+    patient_name: Optional[str] = None
+    booked_by: Optional[int] = None
+    reason: Optional[str] = None
+
+
+class Booking(BaseModel):
+    """patient_id: family books for their patient; a patient books for themself (default)."""
+    patient_id: Optional[int] = None
+    reason: Optional[str] = Field(None, max_length=300)
+
+
 class PushToken(BaseModel):
     """Expo push token from the mobile app; stored on the caller's session."""
     token: str

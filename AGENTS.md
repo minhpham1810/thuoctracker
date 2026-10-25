@@ -36,6 +36,7 @@ The team coordinates through the repo, not the group chat. Who owns what and the
 - Expiration within 7 days -> `expiring_soon` alert to family and doctor.
 - Same dose opened twice -> screen warning "You already took this one."
 - Taken = camera count before minus after is exactly 1.
+- Appointments: the doctor opens times; the patient or their family books (one conditional UPDATE, never two bookings for one time); patients never see others' bookings; "Appointment soon" push to patient + family 1 h before.
 
 ## Commands
 

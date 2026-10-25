@@ -31,7 +31,7 @@ from pydantic import TypeAdapter
 import ai
 
 from .db import SCHEMA, pool, q, q1
-from .models import (Alert, AnyUser, Contact, Credentials, DoseLog, LabelPhoto, Medicine, MedicineUpdate, Message, Patient,
+from .models import (Alert, AnyUser, Appointment, Availability, Booking, Contact, Credentials, DoseLog, LabelPhoto, Medicine, MedicineUpdate, Message, Patient,
                      PushToken, Role, Session, Signup)
 from .push import send_push
 
@@ -94,7 +94,7 @@ def seed():
     pw = hash_password(DEMO_PASSWORD)
     with pool.connection() as c, c.transaction():
         c.execute("TRUNCATE users, medicines, doses, alerts, messages, sessions, cabinet_commands, cabinet_state,"
-                  " cabinet_answer, photo_counts, alerts_sent RESTART IDENTITY CASCADE")
+                  " cabinet_answer, photo_counts, alerts_sent, appointment_slots RESTART IDENTITY CASCADE")
         cur = c.cursor()
         # patients keep ids 1-3: the cabinet screen and the Pi use ?patient=1. Doctor first so FKs resolve.
         cur.executemany(
@@ -132,6 +132,13 @@ def seed():
             (4, 5, "Thanks for telling me. Let's talk at her visit on Friday.", now - timedelta(hours=2), now),
         ])
         c.execute("INSERT INTO alerts_sent (kind, medicine_id) VALUES ('low_pills', 2)")  # the seeded alert above
+        # Dr. Nguyen's open times tomorrow 9:00-11:00, Grandma Lan already booked at 10:00
+        nine = datetime.combine(today + timedelta(days=1), time(9))
+        cur.executemany(
+            "INSERT INTO appointment_slots (doctor_id, starts_at, minutes, patient_id, booked_by, reason, booked_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            [(4, nine + timedelta(minutes=30 * i), 30) + ((1, 5, "Feeling tired on the new Metformin", now)
+                                                          if i == 2 else (None, None, None, None)) for i in range(4)])
 
 
 # --- Auth ----------------------------------------------------------------------
@@ -431,6 +438,12 @@ def tick(last: datetime) -> datetime:
                 "UPDATE doses SET reminded_at = %s WHERE id = %s AND status = 'pending'"
                 " AND coalesce(reminded_at, due_at) <= %s RETURNING id", now, d.id, now - REMIND_EVERY):
             remind(d, m)
+    # appointment reminders, one hour before (a conditional UPDATE claims each one, so it goes out once)
+    for a in q("UPDATE appointment_slots SET reminded_at = %s WHERE patient_id IS NOT NULL AND reminded_at IS NULL"
+               " AND starts_at > %s AND starts_at <= %s RETURNING id", now, now, now + timedelta(hours=1)):
+        s = get_appointment(a["id"])
+        push_users(circle_of(s["patient_id"]), "Appointment soon",
+                   f"{s['patient_name']} sees {s['doctor_name']} {when(s['starts_at'])}.", {"slot_id": s["id"]})
     return now
 
 
@@ -655,6 +668,134 @@ def dose_taken(dose_id: int, u=Depends(me)) -> DoseLog:
     if get_medicine(dose.medicine_id).patient_id != u.id:
         raise HTTPException(403, "Only the patient can confirm a dose")
     return mark_taken(dose, "screen")
+
+
+# --- Appointments ----------------------------------------------------------------
+APPOINTMENT_SQL = ("SELECT s.*, d.name AS doctor_name, p.name AS patient_name FROM appointment_slots s"
+                   " JOIN users d ON d.id = s.doctor_id LEFT JOIN users p ON p.id = s.patient_id")
+
+
+def get_appointment(slot_id: int) -> dict:
+    row = q1(APPOINTMENT_SQL + " WHERE s.id = %s", slot_id)
+    if not row:
+        raise HTTPException(404, "That appointment time no longer exists")
+    return row
+
+
+def when(t: datetime) -> str:
+    """'on Tue, Oct 28 at 9:30 AM'"""
+    return f"on {t:%a, %b} {t.day} at {t.hour % 12 or 12}:{t.minute:02d} {'AM' if t.hour < 12 else 'PM'}"
+
+
+def circle_of(patient_id: int) -> list[int]:
+    """The patient and their family: who hears about the patient's appointments."""
+    return [patient_id] + [r["id"] for r in q("SELECT id FROM users WHERE patient_id = %s", patient_id)]
+
+
+def booking_patient(u, patient_id: Optional[int]) -> Patient:
+    """The patient booking for themself, or family booking for their patient."""
+    pid = patient_id or (u.id if u.role == "patient" else u.patient_id if u.role == "family" else None)
+    if pid is None or not (u.id == pid or (u.role == "family" and u.patient_id == pid)):
+        raise HTTPException(403, "Only the patient or their family can book or cancel")
+    return get_patient(pid)
+
+
+@app.get("/schedule")
+def schedule(days: int = 14, u=Depends(me)) -> list[Appointment]:
+    """Doctor: every slot of theirs from today on, open and booked. Patient/family: the patient's doctor's open
+    future slots and the patient's own appointments, never other patients' bookings."""
+    today = datetime.combine(date.today(), time.min)
+    until = today + timedelta(days=max(1, min(days, 60)) + 1)
+    if u.role == "doctor":
+        rows = q(APPOINTMENT_SQL + " WHERE s.doctor_id = %s AND s.starts_at >= %s AND s.starts_at < %s"
+                 " ORDER BY s.starts_at", u.id, today, until)
+    else:
+        p = get_patient(u.id if u.role == "patient" else u.patient_id)
+        rows = q(APPOINTMENT_SQL + " WHERE s.doctor_id = %s AND s.starts_at < %s AND ((s.patient_id IS NULL"
+                 " AND s.starts_at > %s) OR (s.patient_id = %s AND s.starts_at >= %s)) ORDER BY s.starts_at",
+                 p.doctor_id, until, datetime.now(), p.id, today)
+    return [Appointment(**r) for r in rows]
+
+
+@app.post("/availability")
+def add_availability(a: Availability, u=Depends(me)):
+    """Doctor opens times from start to end, one every `minutes`. Skips past times and times that overlap one
+    already in the schedule. Returns {added: [Appointment], skipped: n}."""
+    if u.role != "doctor":
+        raise HTTPException(403, "Only doctors set availability")
+    start, end = (datetime.combine(a.day, time.fromisoformat(t)) for t in (a.start, a.end))
+    if end <= start:
+        raise HTTPException(400, "The end time must be after the start time")
+    step, now = timedelta(minutes=a.minutes), datetime.now()
+    starts = [start + i * step for i in range(int((end - start) / step))]
+    if not starts:
+        raise HTTPException(400, f"No {a.minutes}-minute appointment fits between {a.start} and {a.end}")
+    if len(starts) > 48:
+        raise HTTPException(400, "That is more than 48 appointments; pick a shorter range")
+    ids = []
+    for t in (t for t in starts if t > now):
+        row = q1("INSERT INTO appointment_slots (doctor_id, starts_at, minutes) SELECT %s, %s, %s"
+                 " WHERE NOT EXISTS (SELECT 1 FROM appointment_slots WHERE doctor_id = %s AND starts_at < %s"
+                 " AND starts_at + make_interval(mins => minutes) > %s)"
+                 " ON CONFLICT (doctor_id, starts_at) DO NOTHING RETURNING id",
+                 u.id, t, a.minutes, u.id, t + step, t)
+        if row:
+            ids.append(row["id"])
+    added = [Appointment(**r) for r in q(APPOINTMENT_SQL + " WHERE s.id = ANY(%s) ORDER BY s.starts_at", ids)]
+    return {"added": added, "skipped": len(starts) - len(added)}
+
+
+@app.post("/slots/{slot_id}/book")
+def book(slot_id: int, b: Booking, u=Depends(me)) -> Appointment:
+    p = booking_patient(u, b.patient_id)
+    s = get_appointment(slot_id)
+    if s["doctor_id"] != p.doctor_id:
+        raise HTTPException(403, f"That time is with another doctor, not {p.name}'s")
+    reason = (b.reason or "").strip() or None
+    now = datetime.now()
+    if not q1("UPDATE appointment_slots SET patient_id = %s, booked_by = %s, reason = %s, booked_at = %s"
+              " WHERE id = %s AND patient_id IS NULL AND starts_at > %s RETURNING id",
+              p.id, u.id, reason, now, slot_id, now):
+        raise HTTPException(409, "Someone just booked that time, or it has passed. Please pick another one.")
+    s = get_appointment(slot_id)
+    push_users([p.doctor_id], "New appointment",
+               f"{p.name} {when(s['starts_at'])}" + (f": {reason}" if reason else ""), {"slot_id": slot_id})
+    push_users([i for i in circle_of(p.id) if i != u.id], "Appointment booked",
+               f"{p.name} sees {s['doctor_name']} {when(s['starts_at'])}.", {"slot_id": slot_id})
+    return Appointment(**s)
+
+
+@app.post("/slots/{slot_id}/cancel")
+def cancel_booking(slot_id: int, u=Depends(me)) -> Appointment:
+    """Patient or family cancels; the time opens up again. (The doctor removes a time with DELETE.)"""
+    s = get_appointment(slot_id)
+    if s["patient_id"] is None:
+        raise HTTPException(409, "That time is not booked")
+    p = booking_patient(u, s["patient_id"])
+    if s["starts_at"] <= datetime.now():
+        raise HTTPException(409, "That visit has already started")
+    if not q1("UPDATE appointment_slots SET patient_id = NULL, booked_by = NULL, reason = NULL, booked_at = NULL,"
+              " reminded_at = NULL WHERE id = %s AND patient_id = %s RETURNING id", slot_id, p.id):
+        raise HTTPException(409, "That appointment was already cancelled")
+    push_users([p.doctor_id], "Appointment cancelled", f"{p.name} cancelled {when(s['starts_at'])}.",
+               {"slot_id": slot_id})
+    push_users([i for i in circle_of(p.id) if i != u.id], "Appointment cancelled",
+               f"{p.name}'s visit with {s['doctor_name']} {when(s['starts_at'])} was cancelled.", {"slot_id": slot_id})
+    return Appointment(**get_appointment(slot_id))
+
+
+@app.delete("/slots/{slot_id}")
+def remove_slot(slot_id: int, u=Depends(me)):
+    """Doctor removes a time. If someone had booked it, the patient and family are told."""
+    s = get_appointment(slot_id)
+    if u.role != "doctor" or s["doctor_id"] != u.id:
+        raise HTTPException(403, "Only the doctor can remove their own times")
+    row = q1("DELETE FROM appointment_slots WHERE id = %s RETURNING patient_id", slot_id)  # who had it, right now
+    if row and row["patient_id"]:
+        push_users(circle_of(row["patient_id"]), "Appointment cancelled",
+                   f"{s['doctor_name']} cancelled the visit {when(s['starts_at'])}. Please book another time.",
+                   {"slot_id": slot_id})
+    return {"ok": True}
 
 
 # --- AI (wraps ai/; fake answers until those functions are ready) -----------

@@ -59,6 +59,12 @@ export const api = {
   took: (doseId) => call('POST', `/doses/${doseId}/taken`),
   cabinetState: (pid) => call('GET', `/cabinet/${pid}/state`),
   registerPush: (pushToken) => call('POST', '/push/register', { token: pushToken }),
+  // appointments
+  schedule: () => call('GET', '/schedule'), // doctor: all their times; patient/family: open times + their visits
+  addAvailability: (a) => call('POST', '/availability', a), // {day, start, end, minutes} -> {added, skipped}
+  book: (slotId, body) => call('POST', `/slots/${slotId}/book`, body), // {patient_id?, reason?}
+  cancelBooking: (slotId) => call('POST', `/slots/${slotId}/cancel`),
+  removeSlot: (slotId) => call('DELETE', `/slots/${slotId}`),
 };
 
 // Backend times are local and naive ("2026-10-24T15:01:50.9"), so slice instead of new Date().

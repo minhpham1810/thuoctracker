@@ -1,7 +1,7 @@
 // Shared look for the app: the same palette as the doctor dashboard (teal = the cabinet's own colour),
 // status colours only for status, and each medicine shown as a capsule in its pill colour.
 // System font on purpose: it follows the phone's text-size setting, which older family members rely on.
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 export const colors = {
   bg: '#EEF3F3', card: '#FFFFFF', text: '#12282E', muted: '#4F666C', line: '#DCE6E8', line2: '#C3D2D6',
@@ -113,6 +113,15 @@ export function Field({ label, hint, style, ...props }) {
       <TextInput style={s.input} placeholderTextColor="#7F9398" autoCorrect={false} accessibilityLabel={label} {...props} />
     </View>
   );
+}
+
+// Yes/no question -> Promise<boolean>. Alert.alert buttons don't work in a browser, so web uses window.confirm.
+export function ask(title, message, yes) {
+  if (Platform.OS === 'web') return Promise.resolve(window.confirm(`${title}\n\n${message}`));
+  return new Promise((resolve) => Alert.alert(title, message, [
+    { text: 'Keep', style: 'cancel', onPress: () => resolve(false) },
+    { text: yes, style: 'destructive', onPress: () => resolve(true) },
+  ], { cancelable: true, onDismiss: () => resolve(false) }));
 }
 
 export function ErrorText({ children }) {
