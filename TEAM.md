@@ -4,6 +4,12 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 21:30 Minh Dau (ai + backend): **Label scanning runs on local Ollama, on Windows or Mac.** `ai.read_label` sends the photo to a local vision model first and falls back to Gemini on a laptop without Ollama. Same output as before (`{name, dose, times, expiration, quantity}`), so the phone app and dashboard autofill are unchanged.
+  - **Thanh (Windows) and Minh Pham (Mac):** install Ollama, run `ollama pull qwen2.5vl:7b` once (~6 GB), then `git pull`, `.venv\Scripts\pip install -r backend\requirements.txt` (adds Pillow), and restart the backend. It picks the first installed of `qwen2.5vl`, `gemma4`, `llama3.2-vision`, `minicpm-v`, `llava`, or `OLLAMA_VISION_MODEL` in `.env`. On the Mac, the `gemma4:e4b-mlx` already there for voice is the backup if qwen isn't pulled.
+  - Photos are shrunk to 1280 px first. Local models answer loosely, so the result is cleaned (`8:00` → `08:00`, bad dates and times dropped, `"60 tablets"` → `60`) and anything unreadable stays empty for a person to fill in, never made up.
+  - The app now waits up to 150 s for a scan; the web proxy allows 120 s.
+  - Offline tests: `python -m ai.test_ai` (new cases: Ollama path, model choice, clean-up, Gemini fallback, no-model error). Not yet tried with real Ollama: please scan one real bottle on each laptop.
+
 - 20:45 Minh Dau (app + backend): **Scan a medicine label with the phone.** In the mobile app, the doctor or the family opens the patient's Today tab → "Scan a label to add a medicine" → takes a photo (or picks one). Gemini fills in the name, dose, times, expiration and pills in the bottle. They choose a free box (1-7) and a pill color, check every field, and save. If a medicine with the same name is already there: "Aspirin was already added (box 1). Are you sure you want to add it again?"
   - Contract: `POST /medicines` now allows the patient's **family** too, not only the doctor. `/ai/label` allows family and returns a new `quantity` field. Edit and delete stay doctor-only.
   - Minh Pham: `LabelDraft` in `web/lib/api.ts` can gain `quantity: number | null` to prefill pills left on the dashboard (optional).

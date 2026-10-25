@@ -52,7 +52,7 @@ export const api = {
   medicines: (pid) => call('GET', `/patients/${pid}/medicines`),
   addMedicine: (m) => call('POST', '/medicines', m), // doctor or family
   // label photo (FormData field "photo") -> {name, dose, times, expiration, quantity}; Gemini can take a while
-  readLabel: (form) => call('POST', '/ai/label', null, { form, timeout: 60000 }),
+  readLabel: (form) => call('POST', '/ai/label', null, { form, timeout: 150000 }), // local Ollama on a CPU laptop is slow
   doses: (pid) => call('GET', `/patients/${pid}/doses`),
   took: (doseId) => call('POST', `/doses/${doseId}/taken`),
   cabinetState: (pid) => call('GET', `/cabinet/${pid}/state`),

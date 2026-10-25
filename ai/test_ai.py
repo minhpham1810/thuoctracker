@@ -23,11 +23,38 @@ def ollama(text, ok=True):
     return r
 
 
-with mock.patch("ai.requests.post", return_value=fake(json.dumps(
-        {"name": "Aspirin", "dose": "1 pill", "times": ["08:00"], "expiration": "2027-01-01", "extra": 1}))) as p:
+def tags(*names):
+    r = mock.Mock()
+    r.json.return_value = {"models": [{"name": n} for n in names]}
+    return r
+
+
+# labels: no Ollama on this laptop -> Gemini
+with mock.patch("ai.requests.get", side_effect=ai.requests.ConnectionError("no ollama")),         mock.patch("ai.requests.post", return_value=fake(json.dumps(
+            {"name": "Aspirin", "dose": "1 pill", "times": ["08:00"], "expiration": "2027-01-01", "extra": 1}))) as p:
     assert ai.read_label(b"jpg") == {"name": "Aspirin", "dose": "1 pill", "times": ["08:00"], "expiration": "2027-01-01",
                                      "quantity": None}
     assert p.call_args.kwargs["json"]["generationConfig"]["responseMimeType"] == "application/json"
+
+# labels: Ollama vision model, picked from what's installed (qwen2.5vl before gemma4), loose output cleaned up
+loose = {"name": " Metformin ", "dose": "1 tablet", "times": ["8:00", "20:00", "noon"], "expiration": "1/31/2027",
+         "quantity": "60 tablets"}
+with mock.patch("ai.requests.get", return_value=tags("gemma4:e4b-mlx", "qwen2.5vl:7b")),         mock.patch("ai.requests.post", return_value=ollama(json.dumps(loose))) as p:
+    assert ai.read_label(b"jpg") == {"name": "Metformin", "dose": "1 tablet", "times": ["08:00", "20:00"],
+                                     "expiration": None, "quantity": 60}
+    body = p.call_args.kwargs["json"]
+    assert body["model"] == "qwen2.5vl:7b" and body["format"]["required"] == list(ai.LABEL_KEYS)
+    assert body["messages"][0]["images"] == [base64.b64encode(b"jpg").decode()]
+with mock.patch.dict(os.environ, {"OLLAMA_VISION_MODEL": "llava:13b"}),         mock.patch("ai.requests.post", return_value=ollama("{}")) as p:
+    assert ai.read_label(b"jpg") == dict.fromkeys(ai.LABEL_KEYS)  # nothing readable: all null, nothing made up
+    assert p.call_args.kwargs["json"]["model"] == "llava:13b"
+# Ollama up but no vision model, and no Gemini key: the error reaches the backend (which tells the user)
+with mock.patch("ai.requests.get", return_value=tags("gemma3:1b")), mock.patch.dict(os.environ, {"GEMINI_API_KEY": ""}):
+    try:
+        ai.read_label(b"jpg")
+        raise AssertionError("no vision model and no Gemini must raise")
+    except RuntimeError as e:
+        assert "ollama pull" in str(e)
 
 with mock.patch("ai.requests.post", return_value=fake('{"count": 5}')):
     assert ai.count_pills(b"jpg") == 5

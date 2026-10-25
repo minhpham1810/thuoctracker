@@ -105,6 +105,8 @@ cd app && npm install && cd ..
 
 Voice questions run on a local model: Ollama hears audio only on an Apple Silicon Mac. On that Mac install [Ollama](https://ollama.com) and run `ollama pull gemma4:e4b-mlx` (9.5 GB, once). If the backend runs on another laptop, make the Mac's Ollama listen on the hotspot (`launchctl setenv OLLAMA_HOST 0.0.0.0`, then quit and reopen Ollama) and put `OLLAMA_URL=http://<mac-ip>:11434` in that laptop's `.env`.
 
+Label scanning (phone app and dashboard) also runs locally, on **Windows or Mac**: install [Ollama](https://ollama.com), run `ollama pull qwen2.5vl:7b` once (~6 GB), and restart the backend. The backend picks the first installed vision model (qwen2.5vl, gemma4, llama3.2-vision, minicpm-v, llava) or `OLLAMA_VISION_MODEL` from `.env`. A laptop without Ollama falls back to Gemini. Photos are shrunk to 1280 px first (Pillow); on a laptop without a GPU a scan can still take 30-90 s.
+
 API docs: `http://localhost:8000/docs`. Data is in Tiger Data (`DATABASE_URL` in `.env`). Several backends can share the database (e.g. two laptops with the same `.env`): only one runs the scheduler, the others take over if it stops. Check the API end to end with `.venv/bin/python -m backend.test_api` (resets the demo data). Restart after editing `.env` (`--reload` only watches `.py`).
 
 **2. Web: doctor dashboard + cabinet screen (port 3000)**
