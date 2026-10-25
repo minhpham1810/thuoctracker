@@ -226,8 +226,8 @@ def play_pcm(size):
         drain(max(size, 0))
         raise ValueError("audio must be whole 16-bit samples")
     try:
-        samples = array.array("h", bytes(size // 2))  # size // 2 silent samples
-    except MemoryError:
+        samples = array.array("h", bytes(size))  # bytes are taken as raw samples: size // 2 of them
+    except Exception:  # out of memory, or anything else: the audio must still be read off USB
         drain(size)
         raise
     service_controls()

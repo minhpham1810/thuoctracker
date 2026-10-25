@@ -128,12 +128,12 @@ class Esp32:
         self.pressed = False  # its talk button was pressed since button_pressed() last looked
         self._sync()
 
-    def _sync(self):
+    def _sync(self, timeout: float = 3):
         """Line up with the board. Whatever it queued before we opened the port (its "ready", or
         that line echoed back to it by Linux while the port opens, which it answers with "err")
         is skipped until the "pong" for our ping."""
         self.link.write(b"\nping\n")
-        end = time.monotonic() + 3
+        end = time.monotonic() + timeout
         buf = b""
         while time.monotonic() < end:
             buf += self.link.readline()
@@ -171,6 +171,10 @@ class Esp32:
                                "(.venv/bin/python pi/esp32/push.py code.py)") from None
         reply = self._line(timeout)
         if reply.startswith("err"):
+            if payload:
+                # an older board may have read the audio as text and answer it with more "err"s:
+                # line up again first, so the next command gets its own reply
+                self._sync(3 + len(payload) / 20_000)
             raise EspError(f"ESP32: {reply[4:]}")
         return reply
 
