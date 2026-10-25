@@ -4,6 +4,8 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 07:45 Thanh (cabinet screen): **The cabinet screen asks "Did you take your pill?" too**, so patients without their phone can answer at the cabinet. Same rules as Minh Dau's phone popup: a dose past its time, not confirmed, under 3 h ago; **Yes, I took it** / **Not yet** (asks again in 30 min); it only asks, never "take it now". It shows when no pill is being given right now (that keeps its own "I took it"), lights the pill's box, and uses a calm look instead of the red "missed" screen. Yes = the existing `POST /cabinet/{id}/taken?dose_id=`, so a missed dose sends Minh Dau's "Taken late" push and the phone popup goes away on its next check. No backend or contract change.
+  - Thanh: rebuild and restart the :3000 web server; the Pi kiosk picks it up on reload (`pkill chromium`).
 - 04:20 Minh Dau (app + backend): **"Did you take your pill?" popup on the patient's phone.** When a pill is due it pops up with **Yes, I took it** / **Not yet** per pill; Not yet asks again in 30 minutes; ✕ stops asking about those pills. Two pills due at once show together. It stops asking 3 hours after the pill's time, and only asks: it never says "take it now" (late double-dose risk). Yes = the same `POST /doses/{id}/taken` as "I took it".
   - Backend: Yes (or the cabinet's "I took it") on a dose already marked missed pushes the family and doctor "Taken late: Grandma Lan took Metformin (12:00) late, at 12:47." Tested in a throwaway schema (4 checks).
   - Snoozes live on the phone: reopening the app asks again right away.

@@ -19,6 +19,10 @@ const CABINET_ASK_MAX_MS = 60_000; // first question after a while: the model ta
 const ANSWER_MS = 15_000; // how long the answer stays on screen
 const DETAIL_MS = 15_000; // a tapped box's details close on their own
 const SHEET_MS = 30_000; // the menu and today's list close on their own (longer: there's more to read)
+// "Did you take your pill?" for a dose past its time that nobody confirmed: same rules as the phone popup
+const CHECK_AGAIN_MS = 30 * 60_000; // "Not yet": ask again in 30 minutes
+const CHECK_FOR_MS = 3 * 60 * 60_000; // stop asking 3 h after the pill's time: never a nudge toward a late double dose
+const GOOD_JOB_MS = 5000; // after a "Yes", "Good job!" stays up this long before the next question
 const LOW = 5; // backend's low-pill rule; display only
 const EXPIRING_DAYS = 7; // backend's expiring-soon rule; display only
 
@@ -56,6 +60,8 @@ export default function Cabinet() {
   const [online, setOnline] = useState(true);
   const [now, setNow] = useState<Date | null>(null); // null until mounted, so server and client HTML match
   const [sending, setSending] = useState(false);
+  const [later, setLater] = useState<Record<number, number>>({}); // dose id -> "Not yet" until (ms)
+  const [lastTook, setLastTook] = useState(0);
   const [ask, setAsk] = useState<Ask>({ phase: "off" });
   const [detail, setDetail] = useState<Slot | null>(null);
   const [sheet, setSheet] = useState<Sheet | null>(null);
@@ -167,11 +173,12 @@ export default function Cabinet() {
     setSetup(null);
   }
 
-  async function tookIt() {
-    if (!state?.dose_id) return;
+  // "I took it" for the pill being given now, or "Yes, I took it" for a past one: the same confirmation as the phone
+  async function confirm(doseId: number) {
     setSending(true);
-    await api(`/cabinet/${patientId}/taken?dose_id=${state.dose_id}`, { method: "POST" }).catch(() => setOnline(false));
-    await loadState();
+    await api(`/cabinet/${patientId}/taken?dose_id=${doseId}`, { method: "POST" }).catch(() => setOnline(false));
+    await Promise.all([loadState(), loadMeds()]);
+    setLastTook(Date.now()); // after the reload, or the old "missed" screen flashes between the question and "Good job!"
     setSending(false);
   }
 
@@ -244,19 +251,28 @@ export default function Cabinet() {
     return () => clearTimeout(t);
   }, [ask]);
 
-  const color = pillColor(state?.color ?? null);
   const inSlot = (s: number) => meds.find((m) => m.slot === s);
   const openSlot = mode === "take" ? state?.slot ?? null : null;
-  const lit = mode !== "idle" ? state?.slot ?? null : null;
+  const asking = ask.phase !== "off" && mode !== "take";
+  // Pill check: the oldest dose past its time, not confirmed, under 3 h ago. Only asks, never "take it now".
+  // Waits while a pill is being given (that has its own "I took it"), a question is open, or "Good job!" shows.
+  const nowMs = now?.getTime() ?? 0;
+  const check = mode !== "take" && !asking && nowMs - lastTook > GOOD_JOB_MS ? doses
+    .filter((d) => (d.status === "pending" || d.status === "missed") && (later[d.id] ?? 0) <= nowMs)
+    .filter((d) => { const ago = nowMs - new Date(d.due_at).getTime(); return ago >= 0 && ago < CHECK_FOR_MS; })
+    .sort((a, b) => a.due_at.localeCompare(b.due_at))[0] : undefined;
+  const checkMed = check ? meds.find((m) => m.id === check.medicine_id) : undefined;
+  const lit = checkMed ? checkMed.slot : mode !== "idle" ? state?.slot ?? null : null;
+  const color = pillColor((checkMed ? checkMed.color : state?.color) ?? null);
   const dueMed = openSlot ? inSlot(openSlot) : undefined;
   const next = nextDose(meds, now);
   const today = todayItems(meds, doses, now);
   const strip = stripItems(today, textSize === "large" ? 3 : 4); // fewer chips so larger names still fit
   const shown = detail !== null && mode !== "take" ? inSlot(detail) : undefined; // the pill prompt always wins
-  const asking = ask.phase !== "off" && mode !== "take";
   const dark = theme === "dark" || (theme === "auto" && now !== null && isNight(now));
   const covered = !!shown || !!sheet; // while a card is open, only the card can be reached
-  const cls = `cab mode-${mode}${dark ? " dark" : ""}${textSize === "large" ? " text-large" : ""}`;
+  // a question, not an alarm: the check has its own calm look instead of the red "missed" one
+  const cls = `cab mode-${check ? "check" : mode}${dark ? " dark" : ""}${textSize === "large" ? " text-large" : ""}`;
 
   if (setup) {
     return (
@@ -290,8 +306,8 @@ export default function Cabinet() {
         <section className="cab-side">
           <div className="cab-hero" aria-live="assertive">
             {/* keyed so a new message plays its entrance once */}
-            <div className="cab-hero-in" key={`${mode}-${asking}`}>
-              <span className={`cab-icon${asking ? " ask" : ""}`}><Icon name={asking ? "mic" : MODE_ICON[mode]} /></span>
+            <div className="cab-hero-in" key={`${mode}-${asking}-${check?.id}`}>
+              <span className={`cab-icon${asking ? " ask" : ""}`}><Icon name={asking ? "mic" : check ? "pill" : MODE_ICON[mode]} /></span>
               {asking ? (
                 <>
                   <h1 className="cab-msg cab-answer">
@@ -300,6 +316,14 @@ export default function Cabinet() {
                   {ask.phase === "listening" && (ask.cabinet
                     ? <p className="cab-sub">When the cabinet says <b>&ldquo;I&apos;m listening&rdquo;</b>, ask your question.</p>
                     : <p className="cab-sub">Ask your question, then tap <b>Done</b>.</p>)}
+                </>
+              ) : check ? (
+                <>
+                  <h1 className="cab-msg">Did you take your {checkMed?.name ?? "pill"}?</h1>
+                  <p className="cab-sub">
+                    {checkMed && <><b>{checkMed.color.charAt(0).toUpperCase() + checkMed.color.slice(1)}</b> pill, </>}
+                    due at <b>{clock(check.due_at.slice(11, 16))}</b>{checkMed && <>, box <b>{checkMed.slot}</b></>}
+                  </p>
                 </>
               ) : mode === "idle" ? (
                 <>
@@ -320,9 +344,19 @@ export default function Cabinet() {
           </div>
 
           {mode === "take" && state?.dose_id ? (
-            <button type="button" className="cab-took" onClick={tookIt} disabled={sending}>
+            <button type="button" className="cab-took" onClick={() => confirm(state.dose_id!)} disabled={sending}>
               <Icon name="check" /> {sending ? "Saving…" : "I took it"}
             </button>
+          ) : check ? (
+            <div className="cab-check">
+              <button type="button" className="cab-took" onClick={() => confirm(check.id)} disabled={sending}>
+                <Icon name="check" /> {sending ? "Saving…" : "Yes, I took it"}
+              </button>
+              <button type="button" className="cab-later" disabled={sending}
+                onClick={() => setLater((x) => ({ ...x, [check.id]: Date.now() + CHECK_AGAIN_MS }))}>
+                Not yet<span className="cab-sr">, ask me again in 30 minutes</span>
+              </button>
+            </div>
           ) : (
             <button type="button" className={`cab-ask${ask.phase === "listening" ? " listening" : ""}`}
               onClick={askButton} disabled={ask.phase === "thinking" || !!viaCabinet}>
