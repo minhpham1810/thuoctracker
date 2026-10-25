@@ -13,6 +13,28 @@ Built at HackPSU Fall 2026.
 - **Family alerts** (Expo push to the mobile app): missed dose, low pills, expiring soon.
 - **AI**: Gemini reads medicine labels and counts pills from camera photos. Voice questions ("Did I take my pill today?") are heard and answered from the real dose log by Gemma 4 running locally in Ollama, and spoken with ElevenLabs.
 
+## Screenshots
+
+All with the demo data (`/demo/reset`).
+
+**Doctor dashboard** (`/doctor`): each patient's cabinet, today's doses, pills left and expiry dates, a 14-day history, and live alerts, messages and the appointment schedule.
+
+![Doctor dashboard: Grandma Lan's chart, cabinet and alerts](docs/screenshots/dashboard.png)
+
+**Cabinet touchscreen** (`/cabinet?patient=1`, on the Pi's 7-inch screen): at pill time it names the pill out loud and opens its box. The patient taps **I took it**, or the camera sees exactly one pill gone.
+
+<img src="docs/screenshots/cabinet.png" alt="Cabinet touchscreen at pill time: box 1 open, Aspirin, I took it" width="600">
+
+**Phone app** (Expo): the patient's pills for today and their medicines; the family sees the same cabinet and can add a medicine by scanning its label.
+
+<table>
+  <tr>
+    <td><img src="docs/screenshots/app-patient.png" alt="Patient app: today's pills and medicines" width="300"></td>
+    <td><img src="docs/screenshots/app-family.png" alt="Family app: today's pills, Scan a label" width="300"></td>
+  </tr>
+  <tr><td align="center">Patient</td><td align="center">Family</td></tr>
+</table>
+
 ## Architecture
 
 Nothing talks directly to anything else. The cabinet, screens, phones and AI all go through the backend, and only the backend stores data, calls AI services and sends texts. Everything runs on one laptop on a phone hotspot.
