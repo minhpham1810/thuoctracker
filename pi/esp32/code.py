@@ -27,6 +27,10 @@ RATE = 16000
 CHUNK = 512  # samples per mic read (32 ms)
 
 link = usb_cdc.data
+if link is None:  # BOOT was held at reset: the drive is on for editing, the Pi's port is off
+    print("Editing mode: no port for the Pi. Press RESET (without BOOT) to run.")
+    while True:
+        time.sleep(1)
 link.timeout = 0.05
 link.write_timeout = 2
 
