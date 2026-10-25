@@ -44,6 +44,7 @@ export const api = {
   login: (email, password) => call('POST', '/login', { email, password }),
   logout: () => call('POST', '/logout'),
   me: () => call('GET', '/me'),
+  health: () => call('GET', '/health'),
   contacts: () => call('GET', '/contacts'), // [{user, unread, last}]
   // all of my messages, or only the ones with withId (which marks theirs read)
   messages: (withId) => call('GET', `/messages${withId ? `?with_id=${withId}` : ''}`),

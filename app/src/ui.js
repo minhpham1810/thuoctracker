@@ -1,8 +1,11 @@
-// Shared look for the app: the same calm sage-teal soft UI as the doctor dashboard (teal = the cabinet's own colour).
-// Cards are the page's own colour lifted by two soft shadows (soft.raised); fields and tracks sink in (soft.pressed).
+// Shared look for the app: the same calm sage-teal palette as the doctor dashboard (teal = the cabinet's own colour).
+// Teal header, flat cards outlined by a hairline (soft.raised); fields and tracks get a faint inset (soft.pressed).
 // Status colours only for status, and each medicine shown as a capsule in its pill colour.
 // System font on purpose: it follows the phone's text-size setting, which older family members rely on.
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Children } from 'react';
 import { Alert, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { prefs } from './session';
 
 export const colors = {
   bg: '#E6EEEB', card: '#EEF4F2', text: '#1D302E', muted: '#4E6561', line: '#D3DFDB', line2: '#B9CAC5', placeholder: '#5F7570',
@@ -11,12 +14,12 @@ export const colors = {
   cab: '#24605C', well: '#153B38',
 };
 
-// Soft UI depth, light from the top left (boxShadow needs the new architecture: Expo 52+)
-const HI = 'rgba(255,255,255,0.85)', LO = 'rgba(84,112,106,0.28)';
+// Flat depth: a 1px hairline ring plus a short shadow (boxShadow needs the new architecture: Expo 52+)
+const LO = 'rgba(84,112,106,0.28)';
 export const soft = {
-  raised: { boxShadow: `-6px -6px 14px ${HI}, 6px 6px 16px ${LO}` },
-  raisedSm: { boxShadow: `-3px -3px 8px ${HI}, 3px 3px 8px ${LO}` },
-  pressed: { boxShadow: `inset 3px 3px 7px ${LO}, inset -3px -3px 7px ${HI}` },
+  raised: { boxShadow: `0 0 0 1px ${colors.line}, 0 2px 8px -2px ${LO}` },
+  raisedSm: { boxShadow: `0 0 0 1px ${colors.line}, 0 1px 2px ${LO}` },
+  pressed: { boxShadow: `inset 0 1px 2px ${LO}` },
   pressedFill: { boxShadow: 'inset 3px 3px 8px rgba(0,0,0,0.28)' }, // a coloured button pushed in
 };
 
@@ -88,6 +91,26 @@ export function Status({ status, text }) {
   );
 }
 
+// Grouped list (Profile, Settings): rows in one card, split by hairlines. Falsy children are skipped.
+export function Group({ children }) {
+  const rows = Children.toArray(children);
+  return <View style={s.group}>{rows.map((r, i) => <View key={r.key} style={i > 0 && s.rule}>{r}</View>)}</View>;
+}
+
+// One row: icon, a small label, the value under it, and an optional control on the right
+export function Row({ icon, label, value, children }) {
+  return (
+    <View style={s.row}>
+      <View style={s.rowIcon}><MaterialCommunityIcons name={icon} size={22} color={colors.primaryInk} /></View>
+      <View style={{ flex: 1 }}>
+        <Text style={s.rowLabel}>{label}</Text>
+        {value != null && <Text style={s.rowValue}>{value}</Text>}
+      </View>
+      {children}
+    </View>
+  );
+}
+
 export function Avatar({ name, size = 40 }) {
   return (
     <View style={[s.avatar, { width: size, height: size, borderRadius: size / 2 }]} accessibilityElementsHidden importantForAccessibility="no">
@@ -127,10 +150,10 @@ export function Field({ label, hint, style, ...props }) {
 }
 
 // Yes/no question -> Promise<boolean>. Alert.alert buttons don't work in a browser, so web uses window.confirm.
-export function ask(title, message, yes) {
+export function ask(title, message, yes, no = 'Keep') {
   if (Platform.OS === 'web') return Promise.resolve(window.confirm(`${title}\n\n${message}`));
   return new Promise((resolve) => Alert.alert(title, message, [
-    { text: 'Keep', style: 'cancel', onPress: () => resolve(false) },
+    { text: no, style: 'cancel', onPress: () => resolve(false) },
     { text: yes, style: 'destructive', onPress: () => resolve(true) },
   ], { cancelable: true, onDismiss: () => resolve(false) }));
 }
@@ -139,18 +162,19 @@ export function ErrorText({ children }) {
   return children ? <Text style={s.error} accessibilityRole="alert">{children}</Text> : null;
 }
 
-// The cabinet as a mark: boxes 1-3, 4-6, the long box 7, with box 2 lit
-export function Logo({ size = 28 }) {
+// The cabinet as a mark: boxes 1-3, 4-6, the long box 7, with box 2 lit. onColor: white tile for the coloured header.
+export function Logo({ size = 28, onColor = false }) {
   const u = size / 34;
-  const door = (lit) => ({ width: 6.6 * u, height: 8.2 * u, borderRadius: 1.2 * u, backgroundColor: lit ? '#FBBF24' : '#fff' });
+  const [body, fg] = onColor ? ['#fff', colors.primary] : [colors.primary, '#fff'];
+  const door = (lit) => ({ width: 6.6 * u, height: 8.2 * u, borderRadius: 1.2 * u, backgroundColor: lit ? '#FBBF24' : fg });
   return (
-    <View style={{ width: size, height: size, borderRadius: 9 * u, backgroundColor: colors.primary, padding: 6 * u, gap: 1 * u }}>
+    <View style={{ width: size, height: size, borderRadius: 9 * u, backgroundColor: body, padding: 6 * u, gap: 1 * u }}>
       {[0, 1].map((r) => (
         <View key={r} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
           {[0, 1, 2].map((c) => <View key={c} style={door(r === 0 && c === 1)} />)}
         </View>
       ))}
-      <View style={{ height: 3.8 * u, borderRadius: 1.2 * u, backgroundColor: '#fff' }} />
+      <View style={{ height: 3.8 * u, borderRadius: 1.2 * u, backgroundColor: fg }} />
     </View>
   );
 }
@@ -160,14 +184,18 @@ const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct
 export const fmtDay = (iso, year = false) =>
   iso ? `${MON[Number(iso.slice(5, 7)) - 1]} ${Number(iso.slice(8, 10))}${year ? `, ${iso.slice(0, 4)}` : ''}` : '';
 
-// "08:00" -> "8:00 AM"
+// "20:00" -> "8:00 PM", or "20:00" with Settings › 24-hour time
+let clock24 = !!prefs.load()?.clock24;
+export const is24h = () => clock24;
+export const set24h = (on) => { clock24 = on; prefs.save({ ...prefs.load(), clock24: on }); };
 export function clock(hhmm) {
   const [h, m] = hhmm.split(':').map(Number);
-  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+  const mm = String(m).padStart(2, '0');
+  return clock24 ? `${h}:${mm}` : `${h % 12 || 12}:${mm} ${h < 12 ? 'AM' : 'PM'}`;
 }
 
 export const s = StyleSheet.create({
-  card: { backgroundColor: colors.card, borderRadius: 22, padding: 16, marginBottom: 14, ...soft.raised },
+  card: { backgroundColor: colors.card, borderRadius: 14, padding: 16, marginBottom: 14, ...soft.raised },
   section: { marginTop: 24 },
   sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, minHeight: 28 },
   sectionTitle: { fontSize: 19, fontWeight: '700', color: colors.text, letterSpacing: -0.2 },
@@ -190,5 +218,11 @@ export const s = StyleSheet.create({
   hint: { fontSize: 13, fontWeight: '400', color: colors.muted },
   input: { minHeight: 50, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.line2, borderRadius: 14,
            paddingHorizontal: 14, fontSize: 17, color: colors.text, ...soft.pressed },
+  group: { backgroundColor: colors.card, borderRadius: 22, overflow: 'hidden', ...soft.raised },
+  rule: { borderTopWidth: 1, borderColor: colors.line },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 12, minHeight: 64 },
+  rowIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: colors.primaryWash, alignItems: 'center', justifyContent: 'center' },
+  rowLabel: { fontSize: 13, fontWeight: '600', color: colors.muted },
+  rowValue: { fontSize: 17, color: colors.text, marginTop: 1 },
   error: { color: colors.missed, backgroundColor: colors.missedWash, borderRadius: 14, padding: 12, fontSize: 15, marginVertical: 8 },
 });

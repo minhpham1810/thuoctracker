@@ -95,6 +95,7 @@ class Message(BaseModel):
     to_id: int
     text: str
     at: Optional[datetime] = None  # set by the backend
+    read_at: Optional[datetime] = None  # set when the recipient opens the chat ("Seen")
 
 
 class Contact(BaseModel):

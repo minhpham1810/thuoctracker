@@ -1,5 +1,5 @@
-/* Shared tokens. Calm sage-teal soft UI: surfaces are the same mist as the page and lift with two soft shadows
-   (light from the top left), so cards feel pressed out of the page. Status colours are muted but keep 4.5:1. */
+/* Shared tokens (see DESIGN.md). Calm sage-teal palette; flat rows outlined by a hairline.
+   Status colours are muted but keep 4.5:1. */
 :root {
   --primary: #2a6f6b;        /* sea-green teal: white text passes 5.9:1 */
   --primary-strong: #235c58;
@@ -12,15 +12,15 @@
   --ok: #356e4a;   --ok-soft: #dcebe0;
   --warn: #8c5a1c; --warn-soft: #f3e6d2;
   --bad: #a3443b;  --bad-soft: #f4e1dd;
-  /* soft UI: --hi is the lit edge, --lo the shaded one */
   --hi: rgb(255 255 255 / .85);
-  --lo: rgb(84 112 106 / .28);
+  --lo: rgb(84 112 106 / .28); /* shadow tint */
 }
-/* declared again on each screen's root so a dark theme's --hi/--lo reach them (var() resolves where declared) */
+/* declared again on each screen's root so a dark theme's --line/--lo reach them (var() resolves where declared).
+   Flat rows: a 1px hairline ring plus a short shadow; --press is a faint inset for pressed buttons and fields. */
 :root, .dash, .cab {
-  --raise: -6px -6px 14px var(--hi), 6px 6px 16px var(--lo);
-  --raise-sm: -3px -3px 8px var(--hi), 3px 3px 8px var(--lo);
-  --press: inset 3px 3px 7px var(--lo), inset -3px -3px 7px var(--hi);
+  --raise: 0 0 0 1px var(--line, var(--border)), 0 2px 8px -2px var(--lo);
+  --raise-sm: 0 0 0 1px var(--line, var(--border)), 0 1px 2px var(--lo);
+  --press: inset 0 1px 2px var(--lo);
 }
 * { box-sizing: border-box; }
 html { font: 16px/1.5 var(--font-body), system-ui, sans-serif; color: var(--fg); }

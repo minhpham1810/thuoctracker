@@ -1,6 +1,6 @@
 /* Cabinet touchscreen (800x480 to 1024x600). Elderly users: huge type, high contrast, one action.
    Sizes use vh so 800x480 is the design target; no text below 14px there.
-   Soft UI: buttons rise out of the screen's tint (--raise) and sink when pressed (--press), like a real button. */
+   Flat UI (DESIGN.md): buttons outlined by --raise, a faint inset (--press) or 2px drop when pressed. */
 .cab {
   --tint: var(--primary-soft);
   --accent: var(--primary);

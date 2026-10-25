@@ -33,6 +33,17 @@ Notifications?.setNotificationHandler({
 
 let pushWorks = false;
 export const hasRealPush = () => pushWorks;
+// For Settings: 'push' (the backend pushes), 'local' (phone notifications while the app runs),
+// 'off' (permission denied), 'banner' (no notification module: in-app banners only)
+export async function notifyStatus() {
+  if (pushWorks) return 'push';
+  if (!Notifications) return 'banner';
+  try {
+    return (await Notifications.getPermissionsAsync()).status === 'granted' ? 'local' : 'off';
+  } catch {
+    return 'banner';
+  }
+}
 
 let bannerListener = null;
 export const onBanner = (fn) => { bannerListener = fn; };
@@ -62,7 +73,13 @@ export async function setupNotifications() {
 }
 
 export function localNotify(title, body) {
-  if (pushWorks) return; // the backend already pushed it
+  if (!pushWorks) show(title, body); // with real push, the backend already sent it
+}
+
+// Settings › Send a test notification (shown even when real push is on)
+export const testNotify = () => show('ThuocTracker', 'Notifications are working on this phone.');
+
+function show(title, body) {
   if (Notifications) {
     Notifications.scheduleNotificationAsync({ content: { title, body }, trigger: null }).catch(() => {});
   } else {

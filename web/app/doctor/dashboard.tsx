@@ -230,7 +230,7 @@ function DoctorView({ doctor, onLogout, display }: { doctor: User; onLogout: () 
   return (
     <>
       <header className="appbar">
-        <span className="brand"><Logo size={30} invert /> ThuocTracker</span>
+        <span className="brand"><Logo size={30} /> ThuocTracker</span>
         <span className={`live${!data ? " wait" : online ? "" : " down"}`} role="status">
           <i aria-hidden="true" />
           {!data ? "Connecting…" : online ? "Live" : "Offline"}

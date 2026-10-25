@@ -8,7 +8,7 @@ export type Family = Base & { role: "family"; patient_id: number };
 export type User = Doctor | Patient | Family;
 export type Session = { token: string; user: User };
 
-export type Message = { id: number; from_id: number; to_id: number; text: string; at: string };
+export type Message = { id: number; from_id: number; to_id: number; text: string; at: string; read_at: string | null };
 // Someone in my care circle (GET /contacts), with our chat state.
 export type Contact = { user: User; unread: number; last: Message | null };
 
