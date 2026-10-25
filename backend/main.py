@@ -30,6 +30,7 @@ from pydantic import TypeAdapter
 
 import ai
 
+from . import labels
 from .db import SCHEMA, pool, q, q1
 from .models import (Alert, AnyUser, Appointment, Availability, Booking, Contact, Credentials, DoseLog, LabelPhoto, Medicine, MedicineUpdate, Message, Patient,
                      PushToken, Role, Session, Signup)
@@ -72,6 +73,10 @@ async def lifespan(app: FastAPI):
                     claim_alert(("low_pills", m.id))
                 if m.expiration - today <= timedelta(days=7):
                     claim_alert(("expiring_soon", m.id))
+    try:
+        labels.ensure_schema()  # FDA label tables; filled once per database by `python -m backend.labels ingest`
+    except Exception as e:
+        print(f"[labels] no label tables: {e!r}")
     task = asyncio.create_task(scheduler())
     yield
     task.cancel()
@@ -857,6 +862,52 @@ def ask(patient_id: int, audio: UploadFile = File(...)):
           f" voice {perf_counter() - answered:.1f} s")
     # not saved for the screen here: the Pi posts it to /cabinet/{id}/answer as the cabinet starts saying it
     return {"text": text, "audio_url": audio_url}
+
+
+# --- FDA drug labels for the doctor (DailyMed in Tiger, see labels.py) ----------
+DAILYMED_PAGE = "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid={}"
+
+
+@app.post("/ai/drugs")
+def drug_question(question: str = Body(..., embed=True), patient_id: Optional[int] = Body(None, embed=True), u=Depends(me)):
+    """Doctor: a question about interactions or side effects -> answer from FDA label passages, with the passages.
+    With patient_id, searches the labels of that patient's medicines plus any drug the question names."""
+    if u.role != "doctor":
+        raise HTTPException(403, "Doctors only")
+    meds = []
+    if patient_id is not None:
+        require_doctor_of(u, patient_id)
+        meds = [m.name for m in medicines_of(patient_id)]
+    loaded = labels.all_labels()
+    if not loaded:
+        raise HTTPException(503, "No FDA labels loaded yet: run python -m backend.labels ingest")
+    scope = {l["id"]: l for text in meds + [question] for l in labels.labels_named(text, loaded)}
+    passages = labels.passages_for(question, list(scope.values()))
+    start = perf_counter()
+    text = try_ai(ai.answer_from_labels, question, passages, meds, fallback=ai.LABELS_DONT_SAY,
+                  on_error="The local AI isn't reachable right now. The closest label passages are below.")
+    print(f"[drugs] {question!r}: {len(passages)} passages from {sorted(l['drug'] for l in scope.values()) or 'all labels'},"
+          f" answer {perf_counter() - start:.1f} s")
+    # label sentences naming a drug from the question together with another one in scope: shown as they are,
+    # whatever the model wrote (Gemma answered "is it indicated" and left out clarithromycin's metformin warning)
+    warnings = [{"n": i, "drug": p["drug"], "section": p["section"], "sentence": p["content"]}
+                for i, p in enumerate(passages, 1) if p.get("interaction")]
+    return {"answer": text, "warnings": warnings, "medicines": meds, "searched": sorted(l["drug"] for l in scope.values()),
+            "sources": [{"n": i, "drug": p["drug"], "label": p["label"], "section": p["section_title"],
+                         "version": p["version"], "effective": p["effective"], "text": p["content"],
+                         "url": DAILYMED_PAGE.format(p["setid"])} for i, p in enumerate(passages, 1)]}
+
+
+@app.get("/patients/{patient_id}/interactions")
+def patient_interactions(patient_id: int, add: Optional[str] = None, u=Depends(me)):
+    """Doctor: every pair of the patient's medicines (plus `add`, a drug being considered): what each FDA label
+    says about the other, and known pathways. No model: quoted label sentences and a fixed table."""
+    require_doctor_of(u, patient_id)
+    result = labels.check([m.name for m in medicines_of(patient_id)] + ([add] if add and add.strip() else []))
+    for pair in result["pairs"]:
+        for said in pair["label_says"]:
+            said["url"] = DAILYMED_PAGE.format(said.pop("setid"))
+    return result
 
 
 # --- Cabinet (login-free: the Pi and its touchscreen) ---------------------------

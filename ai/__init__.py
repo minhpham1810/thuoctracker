@@ -365,6 +365,55 @@ def _day(d: datetime, now: datetime) -> str:
     return {0: "Today", 1: "Yesterday"}.get((now.date() - d.date()).days, f"{d:%A %B} {d.day}")
 
 
+LABELS_DONT_SAY = "The loaded FDA labels don't answer that. The closest label passages are below."
+
+
+def answer_from_labels(question: str, passages: list[dict], medicines: list[str] = ()) -> str:
+    """For the doctor: answer a drug question ONLY from FDA label passages, citing them as [1], [2]...
+
+    passages: [{"drug", "section_title", "content"}] in the order they are numbered. Informs, never prescribes:
+    no dose changes, no "start/stop" advice. Every claim must cite a passage and every number in the answer must
+    appear in a passage it cites, otherwise LABELS_DONT_SAY (the doctor still sees the passages).
+    """
+    if not question.strip() or not passages:
+        return LABELS_DONT_SAY
+    text = _ollama([
+        {"role": "system", "content":
+            "You help a doctor read FDA prescribing labels. Answer in 2 to 5 short sentences using ONLY the numbered "
+            "label passages. After every sentence cite the passage(s) it comes from, like [2] or [1][3]. Say which "
+            "drug's label says it. Quote numbers exactly as written. Do not add facts that are not in the passages, "
+            "do not recommend starting, stopping or changing any dose; the doctor decides. If the passages do not "
+            f'answer the question, reply with exactly: "{LABELS_DONT_SAY}"'},
+        {"role": "user", "content":
+            (f"The patient's medicines: {', '.join(medicines)}.\n" if medicines else "")
+            + "\n\n".join(f"[{i}] {p['drug']} label, {p['section_title']}:\n{p['content']}"
+                          for i, p in enumerate(passages, 1))
+            + f"\n\nQuestion: {question}"}], timeout=90)
+    if LABELS_DONT_SAY[:30] in text:
+        return LABELS_DONT_SAY
+    why = _unsupported(text, passages)
+    if why:
+        print(f"[ai] label answer not supported by its passages ({why}): {text!r}")
+        return LABELS_DONT_SAY
+    return text
+
+
+def _unsupported(text: str, passages: list[dict]) -> str:
+    """Why an answer isn't backed by the passages it cites, or '' if it is."""
+    if m := re.search(r"\[\d+(?:\.\d+)+\]", text):
+        return f"cites {m.group(0)}, a label section number, not a passage"
+    cited = {int(n) for n in re.findall(r"\[(\d+)\]", text)}
+    if not cited:
+        return "no citations"
+    if bad := sorted(n for n in cited if not 1 <= n <= len(passages)):
+        return f"cites passage {bad[0]}, which doesn't exist"
+    source = " ".join(passages[n - 1]["content"] for n in cited)
+    for num in re.findall(r"(?<![\[\d.])\d+(?:\.\d+)?(?![\]\d])", text):  # numbers outside [n] citations
+        if not re.search(rf"(?<![\d.]){re.escape(num)}(?![\d])", source):
+            return f"{num} is not in the cited passages"
+    return ""
+
+
 def speak(text: str) -> bytes:
     """Text -> MP3 bytes. ElevenLabs."""
     r = requests.post(

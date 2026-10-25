@@ -10,6 +10,7 @@ import {
 } from "@/lib/api";
 import AddMedicine from "./add-medicine";
 import CameraTest from "./camera-test";
+import DrugLabels from "./drug-labels";
 import Messages from "./chat";
 import Schedule, { isoMinute, visitLabel } from "./schedule";
 
@@ -506,6 +507,8 @@ function PatientView({ patient, now, meds, doses, family, visit, onEdit, onChang
           })}
         </ol>
       </section>
+
+      <DrugLabels key={patient.id} patientId={patient.id} meds={meds} />
 
       <section className="block" aria-labelledby="hist-h">
         <div className="block-head"><h3 id="hist-h">Dose history</h3></div>

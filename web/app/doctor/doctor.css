@@ -451,3 +451,38 @@
   .fields { grid-template-columns: 1fr; }
   .offline { margin: 16px 16px 0; }
 }
+
+/* Interactions and side effects (FDA labels): a quoted label sentence is the evidence, so it gets the space */
+.labels .small { font-size: 13px; margin-top: 8px !important; }
+.labels-add, .ask-labels form { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
+.labels-add .field, .ask-labels .field { flex: 1 1 320px; }
+.labels-add .btn, .ask-labels form .btn { min-height: 44px; }
+.labels .form-error { margin-top: 12px; }
+.pairs { list-style: none; padding: 0; display: grid; gap: 10px; margin-top: 16px !important; }
+.pair { padding: 14px 16px; border: 1px solid var(--line); border-left: 4px solid var(--tone, var(--line-2)); border-radius: var(--r-ctl); background: var(--paper); }
+.pair.tone-bad { --tone: var(--bad); } .pair.tone-warn { --tone: var(--warn); } .pair.tone-info { --tone: var(--teal); }
+.pair h4 { display: flex; flex-wrap: wrap; gap: 6px; font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+.pair h4 span + span::before { content: "+"; margin-right: 6px; color: var(--ink-2); font-weight: 400; }
+.pair h4 .considered { color: var(--teal-ink); text-decoration: underline dotted; text-underline-offset: 3px; }
+.pair blockquote { margin: 0 0 8px; padding-left: 12px; border-left: 2px solid var(--line); }
+.pair blockquote p { font-size: 14px; }
+.pair blockquote footer { margin-top: 4px; color: var(--ink-2); font-size: 13px; }
+.pair a, .ask-labels a { color: var(--teal-ink); }
+.pathway { font-size: 14px; }
+.pathway small { color: var(--ink-2); margin-left: 4px; }
+.ask-labels { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+.answer { margin-top: 16px; }
+.answer-text { font-size: 15px; line-height: 1.6; max-width: 72ch; }
+.cite { display: inline-grid; place-items: center; min-width: 18px; height: 18px; margin: 0 1px; padding: 0 4px; border-radius: 5px;
+  background: var(--teal-wash); font-size: 11px; font-weight: 700; text-decoration: none; vertical-align: 2px; }
+.sources { list-style: none; padding: 0; display: grid; gap: 6px; margin-top: 12px !important; }
+.sources details { border: 1px solid var(--line); border-radius: var(--r-ctl); background: var(--paper); }
+.sources summary { display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.sources .n { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; background: var(--mist); font-size: 12px; }
+.sources li:target details { border-color: var(--teal); }
+.passage { padding: 0 12px; font-size: 13px; white-space: pre-line; max-height: 260px; overflow-y: auto; }
+.sources details .small { padding: 0 12px 10px; }
+.label-warnings { display: grid; gap: 6px; margin-bottom: 14px; padding: 12px 14px; border-radius: var(--r-ctl); background: var(--warn-wash); font-size: 14px; }
+.label-warnings b { color: var(--warn); }
+.label-warnings .icon { width: 16px; height: 16px; color: var(--warn); vertical-align: -3px; }
+.label-warnings small { color: var(--ink-2); margin-left: 4px; }
