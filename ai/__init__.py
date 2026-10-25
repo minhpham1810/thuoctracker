@@ -3,7 +3,8 @@
 Labels: a local vision model on Ollama (Windows or Mac), Gemini if that laptop has no Ollama.
 Pill counts: Gemini. Voice questions: local Gemma 4 on Ollama (speech-to-text and answers). ElevenLabs = voice.
 .env: GEMINI_API_KEY, ELEVENLABS_API_KEY, OLLAMA_URL when Ollama runs on another laptop, and optionally
-OLLAMA_VISION_MODEL to pick the label model (otherwise the first installed one in VISION_MODELS).
+OLLAMA_VISION_MODEL to pick the label model (otherwise the first installed one in VISION_MODELS),
+and OLLAMA_MODEL for voice when Ollama isn't on a Mac (see below).
 """
 import base64
 import io
@@ -22,7 +23,9 @@ GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 # Gemma 4 E4B hears and answers a question in ~0.5 s on an M5 Pro. 12b-mlx answers a bit better, but in
 # Ollama 0.33.3 it mostly replied "I cannot hear any audio" (tested 2026-10-24).
-OLLAMA_MODEL = "gemma4:e4b-mlx"
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:e4b-mlx")
+# Windows/Linux with an NVIDIA GPU: OLLAMA_MODEL=gemma4:e4b also hears audio on Ollama 0.40.5 (tested
+# 2026-10-24 on an RTX 5070: exact transcripts, ~2 s per step once loaded, ~30 s for the first load).
 # label reading: first installed match wins. gemma4 first: the Mac already has gemma4:e4b-mlx for voice, so labels
 # reuse the loaded model (MLX runs only on Apple Silicon; Windows pulls the regular gemma4:e4b).
 VISION_MODELS = ("gemma4", "qwen2.5vl", "llama3.2-vision", "minicpm-v", "llava")

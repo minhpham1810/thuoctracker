@@ -4,6 +4,8 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 23:10 Thanh (ai, one line): **Voice questions also run on Windows/Linux with an NVIDIA GPU.** `OLLAMA_MODEL` in `.env` picks the Ollama model (default stays `gemma4:e4b-mlx` for the Mac). `gemma4:e4b` (the non-MLX build) hears audio on Ollama 0.40.5: tested on Thanh's laptop (RTX 5070) with exact transcripts, ~2 s per step once loaded, ~30 s for the first load; `/ai/ask` end to end ~7-8 s with ElevenLabs. Your label change picks up the same `gemma4:e4b` here, which is already pulled. The demo backend on Thanh's laptop now uses it, so voice no longer depends on Gemini's 20-a-day free quota (labels and pill counts still do).
+  - Minh Pham: I edited your `ai/__init__.py` (only `OLLAMA_MODEL = os.getenv(...)` plus a comment). The ESP32 audio path itself was tested on the Pi earlier (with the fallback answer).
 - 21:45 Minh Dau (ai): **Label scanning now prefers Gemma 4** (order: gemma4, qwen2.5vl, llama3.2-vision, minicpm-v, llava). This replaces the setup steps in the 21:30 line below.
   - **Minh Pham (Mac):** nothing to pull. The `gemma4:e4b-mlx` you have for voice reads labels too, and the model is already loaded.
   - **Thanh (Windows):** `ollama pull gemma4:e4b` (the regular build, ~6.6 GB). The `-mlx` versions run only on Apple Silicon. Then `git pull`, `.venv\Scripts\pip install -r backend\requirements.txt`, and restart the backend.
