@@ -175,7 +175,11 @@ while True:
     pending += raw
     if not pending.endswith(b"\n"):
         continue
-    line, pending = pending.decode().strip(), b""
+    try:
+        line = pending.decode().strip()
+    except UnicodeError:
+        line = ""  # not text (e.g. audio meant for a command this code doesn't know): skip it
+    pending = b""
     if not line:
         continue
     try:

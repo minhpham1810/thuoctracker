@@ -19,6 +19,21 @@ import wave
 
 import requests
 
+
+def _load_env(path: str):
+    """pi/.env, the file cabinet.service reads, so bench runs from a shell get the same settings.
+    Anything already set in the shell wins."""
+    try:
+        with open(path) as f:
+            for line in f:
+                key, sep, value = line.strip().partition("=")
+                if sep and not key.startswith("#"):
+                    os.environ.setdefault(key.strip(), value.strip())
+    except FileNotFoundError:
+        pass
+
+
+_load_env(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 BACKEND = os.environ.get("BACKEND_URL", "http://localhost:8000")
 PATIENT_ID = int(os.environ.get("PATIENT_ID", "1"))
 TAKE_SECONDS = int(os.environ.get("TAKE_SECONDS", "10"))  # slot stays open this long
@@ -144,7 +159,16 @@ class Esp32:
         raise TimeoutError("the ESP32 didn't answer")
 
     def _call(self, command: str, payload: bytes = b"", timeout: float = 30) -> str:
-        self.link.write(command.encode() + b"\n" + payload)
+        import serial
+
+        # a board that stops reading (crashed, or an old code.py that doesn't know the command) must
+        # not hang the cabinet: give up on the write instead of waiting forever
+        self.link.write_timeout = 5 + len(payload) / 50_000
+        try:
+            self.link.write(command.encode() + b"\n" + payload)
+        except serial.SerialTimeoutException:
+            raise TimeoutError("the ESP32 stopped reading: is the latest code.py on it? "
+                               "(.venv/bin/python pi/esp32/push.py code.py)") from None
         reply = self._line(timeout)
         if reply.startswith("err"):
             raise EspError(f"ESP32: {reply[4:]}")
