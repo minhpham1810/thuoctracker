@@ -326,10 +326,10 @@ def drop_door_commands(patient_id: int, dose_id: int):
 
 
 def dose_log(patient_id: int) -> list[dict]:
-    """Dose log in the shape ai.answer() expects (see TEAM.md)."""
-    rows = q("SELECT m.name, d.due_at, d.status, d.taken_at FROM doses d JOIN medicines m ON m.id = d.medicine_id"
+    """Dose log in the shape ai.answer() expects (see TEAM.md), plus the pill color patients ask by ("my blue pill")."""
+    rows = q("SELECT m.name, m.color, d.due_at, d.status, d.taken_at FROM doses d JOIN medicines m ON m.id = d.medicine_id"
              " WHERE m.patient_id = %s ORDER BY d.due_at DESC", patient_id)
-    return [{"medicine": r["name"], "due_at": r["due_at"].isoformat(), "status": r["status"],
+    return [{"medicine": r["name"], "color": r["color"], "due_at": r["due_at"].isoformat(), "status": r["status"],
              "taken_at": r["taken_at"].isoformat() if r["taken_at"] else None} for r in rows]
 
 
@@ -676,9 +676,10 @@ def read_label(photo: UploadFile = File(...), u=Depends(me)):
 def ask(patient_id: int, audio: UploadFile = File(...)):
     """Cabinet: question audio -> answer text + MP3 url, answered from the dose log."""
     get_patient(patient_id)
-    question = try_ai(ai.transcribe, audio.file.read(), fallback="Did I take my pill today?")
-    text = try_ai(ai.answer, question, dose_log(patient_id),
-                  fallback="Sorry, I can't answer right now. Please check the screen.")
+    sorry = "Sorry, I can't answer right now. Please check the screen."
+    # no transcript (Ollama down, model not pulled, audio not WAV): say sorry, never answer a question nobody asked
+    question = try_ai(ai.transcribe, audio.file.read(), fallback=None)
+    text = sorry if question is None else try_ai(ai.answer, question, dose_log(patient_id), fallback=sorry)
     return {"text": text, "audio_url": speech_url(text)}
 
 

@@ -11,7 +11,7 @@ Built at HackPSU Fall 2026.
 - **Cabinet** (Raspberry Pi 5): 3 servo-controlled slots, touchscreen, camera that checks whether a pill was really taken, mic + speaker you can talk to.
 - **Doctor dashboard** (web): patients, taken/missed doses, pills left, live alerts.
 - **Family alerts** (Expo push to the mobile app): missed dose, low pills, expiring soon.
-- **AI**: Gemini reads medicine labels and counts pills from camera photos. Voice questions ("Did I take my pill today?") are answered from the real dose log and spoken with ElevenLabs.
+- **AI**: Gemini reads medicine labels and counts pills from camera photos. Voice questions ("Did I take my pill today?") are heard and answered from the real dose log by Gemma 4 running locally in Ollama, and spoken with ElevenLabs.
 
 ## Architecture
 
@@ -31,14 +31,14 @@ Nothing talks directly to anything else. The cabinet, screens, phones and AI all
                                         ▼
  ┌────────────────────┐     ┌────────────────────────┐     ┌────────────────────┐
  │ Pi cabinet   pi/   ├────►│ backend/ FastAPI :8000 ├────►│ Gemini             │
- │ servos, camera,    │     │  routes + rules        │     │ labels, pill count,│
- │ mic, speaker       │     │  scheduler (every 2 s) │     │ speech, answers    │
+ │ servos, camera,    │     │  routes + rules        │     │ labels, pill count │
+ │ mic, speaker       │     │  scheduler (every 2 s) │     │                    │
  └────────────────────┘     │  Tiger Data (Postgres) │     ├────────────────────┤
                             │  /audio/*.mp3          ├────►│ ElevenLabs  voice  │
  ┌────────────────────┐     │                        │     ├────────────────────┤
  │ Phones  app/ Expo  │◄───►│  ai/ pure functions    ├────►│ Expo push          │
  │ patient, family,   │     │  (called by routes)    │     │ alerts, pill time, │
- │ doctor             │     │                        │     │ chat               │
+ │ doctor             │     │  Ollama Gemma 4: voice │     │ chat               │
  └─────────▲──────────┘     └────────────────────────┘     └─────────┬──────────┘
            │                                                         │
            └──────────────────── push notifications ─────────────────┘
@@ -102,6 +102,8 @@ cd app && npm install && cd ..
 .venv/bin/python -m uvicorn backend.main:app --reload --host 0.0.0.0
 # Windows: .venv\Scripts\python -m uvicorn backend.main:app --reload --host 0.0.0.0
 ```
+
+Voice questions run on a local model: Ollama hears audio only on an Apple Silicon Mac. On that Mac install [Ollama](https://ollama.com) and run `ollama pull gemma4:e4b-mlx` (9.5 GB, once). If the backend runs on another laptop, make the Mac's Ollama listen on the hotspot (`launchctl setenv OLLAMA_HOST 0.0.0.0`, then quit and reopen Ollama) and put `OLLAMA_URL=http://<mac-ip>:11434` in that laptop's `.env`.
 
 API docs: `http://localhost:8000/docs`. Data is in Tiger Data (`DATABASE_URL` in `.env`). Several backends can share the database (e.g. two laptops with the same `.env`): only one runs the scheduler, the others take over if it stops. Check the API end to end with `.venv/bin/python -m backend.test_api` (resets the demo data). Restart after editing `.env` (`--reload` only watches `.py`).
 

@@ -168,7 +168,7 @@ export default function Cabinet() {
     setSending(false);
   }
 
-  // Voice question: record in the browser -> /ai/ask (Gemini answers from the dose log) -> play the ElevenLabs MP3.
+  // Voice question: record in the browser -> WAV -> /ai/ask (local Gemma answers from the dose log) -> play the ElevenLabs MP3.
   async function startAsk() {
     if (!navigator.mediaDevices?.getUserMedia) {
       // browsers only allow the mic on https or localhost; the Pi kiosk passes a Chromium flag (pi/kiosk.sh)
@@ -189,7 +189,7 @@ export default function Cabinet() {
       setAsk({ phase: "thinking" });
       try {
         const body = new FormData();
-        body.append("audio", new Blob(chunks, { type: rec.mimeType }), "question");
+        body.append("audio", await toWav(new Blob(chunks, { type: rec.mimeType })), "question.wav");
         const r = await api<{ text: string; audio_url: string | null }>(`/ai/ask?patient_id=${patientId}`, { method: "POST", body });
         setAsk({ phase: "answer", text: r.text });
         if (r.audio_url) new Audio(`/api${r.audio_url}`).play().catch(() => {}); // text stays on screen if audio fails
@@ -549,6 +549,21 @@ function todayItems(meds: Medicine[], doses: DoseLog[], now: Date | null): Today
     .filter((t) => t > hhmm && !doses.some((d) => d.medicine_id === m.id && d.due_at.startsWith(`${ymd}T${t}`)))
     .map((t) => ({ key: `m${m.id}-${t}`, at: t, name: m.name, color: m.color, slot: m.slot, status: "later" as TodayStatus })));
   return [...logged, ...later].sort((a, b) => a.at.localeCompare(b.at));
+}
+
+// The browser records WebM (Safari: MP4), but the local speech model reads only WAV: decode, resample to
+// 16 kHz mono (what the Pi sends too) and put the 16-bit samples behind a WAV header.
+async function toWav(recording: Blob): Promise<Blob> {
+  const audio = await new OfflineAudioContext(1, 1, 16000).decodeAudioData(await recording.arrayBuffer());
+  const pcm = audio.getChannelData(0);
+  const v = new DataView(new ArrayBuffer(44 + pcm.length * 2));
+  const tag = (at: number, s: string) => [...s].forEach((c, i) => v.setUint8(at + i, c.charCodeAt(0)));
+  tag(0, "RIFF"); v.setUint32(4, 36 + pcm.length * 2, true); tag(8, "WAVE");
+  tag(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); // PCM, mono
+  v.setUint32(24, 16000, true); v.setUint32(28, 32000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  tag(36, "data"); v.setUint32(40, pcm.length * 2, true);
+  pcm.forEach((s, i) => v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, s)) * 0x7fff, true));
+  return new Blob([v], { type: "audio/wav" });
 }
 
 // The bottom strip: the last 2 logged doses, then what's next, at most `max` so the names fit.
