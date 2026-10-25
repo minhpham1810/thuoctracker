@@ -323,7 +323,9 @@ def _louder(pcm: bytes) -> bytes:
     rms = (sum(s * s for s in samples) / len(samples)) ** 0.5
     gain = min(20.0, 0.7 * 32767 / peak) if peak else 1.0
     note = " (very quiet: speak close to the mic, and check its wiring)" if peak < 300 else ""
-    print(f"[mic] peak {peak}, average {rms:.0f} of 32767{note}" + (f"; raised {gain:.1f}x" if gain > 1.2 else ""))
+    heard = len(pcm.rstrip(b"\0")) / (2 * RATE)  # the ESP32 sends silence once the patient stops talking
+    print(f"[mic] {heard:.1f} s heard, peak {peak}, average {rms:.0f} of 32767{note}"
+          + (f"; raised {gain:.1f}x" if gain > 1.2 else ""))
     if gain <= 1.2:
         return pcm
     return array.array("h", (max(-32768, min(32767, int(s * gain))) for s in samples)).tobytes()

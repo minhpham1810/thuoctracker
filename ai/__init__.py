@@ -83,7 +83,7 @@ def _why(e: Exception) -> str:
 
 def _ollama(messages: list[dict], model: str = OLLAMA_MODEL, format=None, timeout: int = 60) -> str:
     body = {"model": model, "messages": messages, "stream": False, "think": False,
-            "keep_alive": "1h",  # stay loaded: a cold load adds seconds to the first question
+            "keep_alive": -1,  # never unload: after "1h" idle, the next question waited ~30 s for a reload
             "options": {"temperature": 0}}
     if format:
         body["format"] = format  # JSON schema: Ollama constrains the output to it

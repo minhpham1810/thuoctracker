@@ -7,6 +7,7 @@
 #   audio N  + N bytes    raw audio, kept in RAM and played     -> ok | err ...  (what the Pi sends)
 #   say N  + N bytes      a WAV file: saved to /say.wav, played -> ok | err ...  (older Pi code)
 #   rec SECONDS           records the mic -> pcm N + N bytes (16 kHz, 16-bit, mono) | err ...
+#                         (stops early once the patient goes quiet; the rest of the N bytes is silence)
 #   hall                  -> hall closed | hall open | hall disabled
 #   status                -> one JSON line (Hall state/counters, volume, mute)
 # Hall/knob changes NEVER send unsolicited lines on the data port.
@@ -42,6 +43,12 @@ VOLUME_START_STEP = 7  # (7/16)^2 = 0.19, about the old 0.2 start
 VOLUME_MAX = 1.0  # full DIGITAL range; not a safe-wattage limiter for the 0.5 W speaker!
 RATE = 16000
 CHUNK = 512  # samples per mic read (32 ms)
+# rec stops listening once the patient has talked and gone quiet, so a short question doesn't wait out
+# the whole recording. shortcut: levels guessed, not yet tuned on the cabinet; if it cuts people off,
+# raise QUIET_END (a noisy room just records the full time, as before).
+TALK_MIN = int(0.4 * RATE)  # this much talking first, so a click or a cough can't end it
+QUIET_END = int(1.2 * RATE)  # then this much quiet ends it (older patients pause mid-sentence)
+REC_MIN = 2 * RATE  # and never before 2 s
 
 link = usb_cdc.data
 if link is None:  # knob SW was held at reset: editing, no Pi data port
@@ -331,6 +338,8 @@ def record(seconds):
             service_controls()
         send("pcm %d" % (total * 2))
         left = total
+        floor = None  # the quietest 32 ms so far: the room's own noise
+        talk = quiet = 0  # samples of talking so far, and of quiet since the last talking
         try:
             while left:
                 n = mic.record(samples, min(CHUNK, left))
@@ -338,14 +347,24 @@ def record(seconds):
                 if n:
                     write_all(bytes(memoryview(samples)[:n]))  # raw bytes, 2 per sample
                     left -= n
+                    level = max(max(samples), -min(samples))
+                    floor = level if floor is None else min(floor, level)
+                    if level > 3 * floor + 40:  # well above the room: someone is talking
+                        talk += n
+                        quiet = 0
+                    else:
+                        quiet += n
+                    if talk >= TALK_MIN and quiet >= QUIET_END and total - left >= REC_MIN:
+                        break  # done talking: the rest goes out as silence below
         except Exception as e:
-            # The Pi expects exactly total*2 bytes. No diagnostic text may enter that payload.
+            # No diagnostic text may enter the payload; the rest goes out as silence below.
             panel.last_audio_error = repr(e)
-            zeros = bytes(2 * CHUNK)
-            while left:
-                n = min(CHUNK, left)
-                write_all(zeros[:2 * n])
-                left -= n
+        # The Pi expects exactly total*2 bytes.
+        zeros = bytes(2 * CHUNK)
+        while left:
+            n = min(CHUNK, left)
+            write_all(zeros[:2 * n])
+            left -= n
     finally:
         mic.deinit()
 

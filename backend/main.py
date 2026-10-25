@@ -17,6 +17,7 @@ import secrets
 import socket
 from contextlib import asynccontextmanager
 from datetime import date, datetime, time, timedelta
+from time import perf_counter
 from typing import Literal, Optional
 
 import psycopg
@@ -696,11 +697,18 @@ def ask(patient_id: int, audio: UploadFile = File(...)):
     """Cabinet: question audio -> answer text + MP3 url, answered from the dose log."""
     get_patient(patient_id)
     sorry = "Sorry, I can't answer right now. Please check the screen."
+    start = perf_counter()
     # no transcript (Ollama down, model not pulled, audio not WAV): say sorry, never answer a question nobody asked
     question = try_ai(ai.transcribe, audio.file.read(), fallback=None)
+    heard = perf_counter()
     text = sorry if question is None else try_ai(ai.answer, question, dose_log(patient_id), fallback=sorry)
+    answered = perf_counter()
+    audio_url = speech_url(text)
+    # where a slow answer's time went (the steps run one after another)
+    print(f"[ask] heard {question!r}: transcribe {heard - start:.1f} s, answer {answered - heard:.1f} s,"
+          f" voice {perf_counter() - answered:.1f} s")
     # not saved for the screen here: the Pi posts it to /cabinet/{id}/answer as the cabinet starts saying it
-    return {"text": text, "audio_url": speech_url(text)}
+    return {"text": text, "audio_url": audio_url}
 
 
 # --- Cabinet (login-free: the Pi and its touchscreen) ---------------------------
