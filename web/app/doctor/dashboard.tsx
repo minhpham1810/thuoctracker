@@ -158,7 +158,9 @@ function DoctorView({ doctor, onLogout }: { doctor: User; onLogout: () => void }
   const load = useCallback(async () => {
     try {
       const [contacts, alerts, slots] = await Promise.all([
-        api<Contact[]>("/contacts"), api<Alert[]>("/alerts"), api<Appointment[]>("/schedule"),
+        api<Contact[]>("/contacts"), api<Alert[]>("/alerts"),
+        // a backend from before appointments has no /schedule: an empty schedule, not an offline dashboard
+        api<Appointment[]>("/schedule").catch(() => [] as Appointment[]),
       ]);
       const now = new Date();
       const all = contacts.map((c) => c.user).filter((u): u is Patient => u.role === "patient");
