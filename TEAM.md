@@ -172,6 +172,7 @@ App and dashboard routes need `Authorization: Bearer <token>` (401 without it). 
 |---|---|---|
 | `POST /signup` `{role, name, email, password, age?, doctor_email?, patient_email?}` | anyone | `{token, user}`. Patient needs `age` + an existing doctor's email; family needs an existing patient's email. 409 if the email is taken |
 | `POST /login` `{email, password}` | anyone | `{token, user}`; 401 "Wrong email or password" |
+| `POST /login/auth0` `{access_token, new_doctor?}` | anyone | `{token, user}`. "Continue with Auth0" on the dashboard and in the app: the backend checks the token with Auth0 `/userinfo` (`AUTH0_DOMAIN` in `.env`). A new email gets a doctor account (`new_doctor`, default true; the app sends false and gets 404 "Create an account" instead); an existing account needs the email verified in Auth0 (else 401). 503 if `AUTH0_DOMAIN` isn't set |
 | `POST /logout`, `GET /me` | logged in | `{ok}`, the `User` |
 | `GET /contacts` | logged in | `[{user, unread, last}]`: their care circle. Doctor: patients + their families. Patient: doctor + family. Family: patient + doctor |
 | `GET /messages?with_id=&since=` | logged in | `[Message]` `{id, from_id, to_id, text, at}` oldest first; with `with_id`, also marks that person's messages read |

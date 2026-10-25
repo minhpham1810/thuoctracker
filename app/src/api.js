@@ -42,6 +42,8 @@ async function call(method, path, body, { timeout = 6000, form } = {}) {
 export const api = {
   signup: (form) => call('POST', '/signup', form),
   login: (email, password) => call('POST', '/login', { email, password }),
+  // existing accounts only: a new email gets 404 "Create an account" (the dashboard's call would make a doctor)
+  loginAuth0: (accessToken) => call('POST', '/login/auth0', { access_token: accessToken, new_doctor: false }, { timeout: 15000 }),
   logout: () => call('POST', '/logout'),
   me: () => call('GET', '/me'),
   health: () => call('GET', '/health'),

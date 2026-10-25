@@ -21,6 +21,7 @@ from time import perf_counter
 from typing import Literal, Optional
 
 import psycopg
+import requests
 from dotenv import load_dotenv
 from fastapi import Body, Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -565,6 +566,34 @@ def login(c: Credentials) -> Session:
     row = find_email(c.email)
     if not row or not check_password(c.password, row["password_hash"]):
         raise HTTPException(401, "Wrong email or password")  # same message: don't reveal which emails exist
+    return new_session(row)
+
+
+@app.post("/login/auth0")
+def login_auth0(access_token: str = Body(embed=True), new_doctor: bool = Body(True)) -> Session:
+    """"Continue with Auth0" (dashboard and app): Auth0 vouches for the email, then it's our usual session."""
+    domain = os.getenv("AUTH0_DOMAIN")
+    if not domain:
+        raise HTTPException(503, "Auth0 isn't set up on this backend (AUTH0_DOMAIN in .env)")
+    try:
+        r = requests.get(f"https://{domain}/userinfo", headers={"Authorization": f"Bearer {access_token}"}, timeout=10)
+    except requests.RequestException:
+        raise HTTPException(502, "Couldn't reach Auth0")
+    if r.status_code != 200:
+        raise HTTPException(401, "Your Auth0 login expired. Log in again")
+    info = r.json()
+    email = (info.get("email") or "").strip().lower()
+    if "@" not in email:
+        raise HTTPException(400, "Your Auth0 account has no email")
+    # dashboard: a new email gets a doctor account, the same as its /signup
+    row = new_doctor and q1("INSERT INTO users (email, name, role) VALUES (%s, %s, 'doctor') ON CONFLICT DO NOTHING RETURNING *",
+                            email, (info.get("name") or email).strip())
+    if not row:
+        row = find_email(email)
+        if not row:  # the app: patients and family need more than an email, so they sign up there first
+            raise HTTPException(404, f"No account for {email} yet. Tap Create an account and use this email")
+        if not info.get("email_verified"):  # else anyone could sign up on Auth0 with someone's email and log in as them
+            raise HTTPException(401, "That email already has an account. Verify it with Auth0 first (check your inbox)")
     return new_session(row)
 
 

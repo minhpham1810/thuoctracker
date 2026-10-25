@@ -27,13 +27,20 @@
       [
         "expo-notifications",
         {
-          "defaultChannel": "default"
+          "defaultChannel": "default",
+          "enableRemoteNotifications": false
         }
       ],
       [
         "expo-image-picker",
         {
           "cameraPermission": "Allow $(PRODUCT_NAME) to use the camera to scan medicine labels."
+        }
+      ],
+      [
+        "react-native-auth0",
+        {
+          "domain": "dev-igr7vxhgin21kqfz.us.auth0.com"
         }
       ]
     ],

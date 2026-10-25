@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { api, getBaseUrl, setBaseUrl } from './api';
+import { auth0Token, hasAuth0 } from './auth0';
 import { Button, colors, ErrorText, Field, Logo } from './ui';
 
 // Email + password. The account's role decides what the app shows.
@@ -29,6 +30,20 @@ export default function Login({ onLogin, onSignUp, notice }) {
     }
   };
 
+  const withAuth0 = async () => {
+    if (busy) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const t = await auth0Token(); // null: closed the Auth0 page
+      if (t) onLogin(await api.loginAuth0(t));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <ScrollView contentContainerStyle={auth.wrap} keyboardShouldPersistTaps="handled">
       <Brand title="Welcome back" lede="Today's pills, alerts and messages for you and your family." />
@@ -38,6 +53,7 @@ export default function Login({ onLogin, onSignUp, notice }) {
              textContentType="password" onSubmitEditing={submit} returnKeyType="go" />
       <ErrorText>{error}</ErrorText>
       <Button title={busy ? 'Logging in…' : 'Log in'} onPress={submit} disabled={busy} big />
+      {hasAuth0 && <Button title="Continue with Auth0" kind="secondary" onPress={withAuth0} disabled={busy} big style={{ marginTop: 12 }} />}
       <Pressable onPress={onSignUp} hitSlop={8} accessibilityRole="button" style={auth.linkBtn}>
         <Text style={auth.linkText}>New here? <Text style={auth.link}>Create an account</Text></Text>
       </Pressable>

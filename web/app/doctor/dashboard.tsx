@@ -49,10 +49,12 @@ const ALERT_LABEL: Record<Alert["type"], string> = {
 };
 const ALERT_ICON: Record<Alert["type"], IconName> = { missed: "x", low_pills: "pill", expiring_soon: "clock" };
 
+type Saved = Session & { auth0?: boolean }; // auth0: logging out must end the Auth0 session too
+
 export default function Dashboard() {
-  const [session, setSession] = useState<Session | null | undefined>(undefined); // undefined: not read yet
+  const [session, setSession] = useState<Saved | null | undefined>(undefined); // undefined: not read yet
   const display = useDisplay();
-  const save = useCallback((s: Session | null) => {
+  const save = useCallback((s: Saved | null) => {
     try { localStorage.setItem(SAVED, JSON.stringify(s)); } catch {}
     setToken(s?.token ?? null);
     setSession(s);
@@ -77,6 +79,11 @@ export default function Dashboard() {
   if (!session) return shell(<Login onLogin={save} />);
   async function logout() {
     await api("/logout", { method: "POST" }).catch(() => {});
+    if (session?.auth0) { // else the login screen would trade the still-open Auth0 session straight back in
+      try { localStorage.removeItem(SAVED); } catch {}
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- the Auth0 SDK route, not a page: needs a full load
+      return location.assign("/auth/logout");
+    }
     save(null);
   }
   return shell(<DoctorView doctor={session.user} onLogout={logout} display={display} />);
@@ -86,31 +93,45 @@ const json = (body: unknown): RequestInit => ({
   method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
 });
 
-function Login({ onLogin }: { onLogin: (s: Session) => void }) {
+function Login({ onLogin }: { onLogin: (s: Saved) => void }) {
   const [signingUp, setSigningUp] = useState(false);
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  // one login try (form or Auth0); only doctors stay logged in here
+  const attempt = useCallback(async (get: () => Promise<Session>, auth0 = false) => {
     setError(null);
     setBusy(true);
     try {
-      const s = signingUp
-        ? await api<Session>("/signup", json({ ...form, role: "doctor" }))
-        : await api<Session>("/login", json({ email: form.email, password: form.password }));
+      const s = await get();
       if (s.user.role !== "doctor") {
         await api("/logout", { method: "POST", headers: { Authorization: `Bearer ${s.token}` } }).catch(() => {});
         return setError("This page is for doctors. Patients and family use the phone app.");
       }
-      onLogin(s);
+      onLogin(auth0 ? { ...s, auth0 } : s);
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setBusy(false);
     }
+  }, [onLogin]);
+
+  // back from Auth0 (or still logged in there): trade its token for our session. setTimeout: see Dashboard
+  useEffect(() => {
+    const t = setTimeout(async () => {
+      const r = await fetch("/auth/access-token").catch(() => null); // 401 = no Auth0 session, keep the form
+      if (r?.ok) attempt(async () => api<Session>("/login/auth0", json({ access_token: (await r.json()).token })), true);
+    }, 0);
+    return () => clearTimeout(t);
+  }, [attempt]);
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    attempt(() => signingUp
+      ? api<Session>("/signup", json({ ...form, role: "doctor" }))
+      : api<Session>("/login", json({ email: form.email, password: form.password })));
   }
 
   return (
@@ -139,6 +160,8 @@ function Login({ onLogin }: { onLogin: (s: Session) => void }) {
         <button type="submit" className="btn btn-primary btn-block" disabled={busy}>
           {busy ? "One moment…" : signingUp ? "Create account" : "Log in"}
         </button>
+        {/* a full page load, not client routing: the Auth0 SDK serves /auth/* in proxy.ts. prompt=login lets you pick another account */}
+        <a className="btn btn-block" href="/auth/login?returnTo=/doctor&prompt=login">Continue with Auth0</a>
         <p className="signin-switch">
           {signingUp ? "Already have an account?" : "New doctor?"}{" "}
           <button type="button" className="link" onClick={() => { setSigningUp(!signingUp); setError(null); }}>

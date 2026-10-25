@@ -57,6 +57,7 @@
 .btn-sm .icon { width: 16px; height: 16px; }
 .btn-icon { width: 40px; padding: 0; }
 .btn-block { width: 100%; min-height: 46px; font-size: calc(15px * var(--fs)); }
+a.btn { text-decoration: none; }
 .btn:disabled { opacity: .55; cursor: not-allowed; }
 .link {
   border: 0; padding: 0; background: none; color: var(--accent-ink); font: inherit; font-weight: 600;
