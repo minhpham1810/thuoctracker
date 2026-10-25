@@ -40,6 +40,23 @@ VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")  # "Rachel",
 VOICE_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_flash_v2_5")
 DONT_KNOW = "I don't know, please ask your doctor."
 DIDNT_HEAR = "Sorry, I didn't hear a question. Please try again."
+NO_DOSES = "There are no doses in your log yet."
+# Guards on answer(): with an empty or short log, Gemma 4 invented doses ("You took metformin at 8:00 AM and
+# 8:00 PM" for a patient with no doses and no metformin, 6 of 6 tries). Every medicine, pill color and time
+# an answer mentions must be in the dose log, or the answer becomes DONT_KNOW.
+COMMON_DRUGS = {
+    "acetaminophen", "advil", "albuterol", "allopurinol", "alprazolam", "amlodipine", "amoxicillin", "aspirin",
+    "atenolol", "atorvastatin", "carvedilol", "cetirizine", "citalopram", "clopidogrel", "digoxin", "donepezil",
+    "escitalopram", "furosemide", "gabapentin", "glipizide", "hydrochlorothiazide", "ibuprofen", "insulin",
+    "levothyroxine", "lisinopril", "loratadine", "losartan", "lovastatin", "meloxicam", "memantine", "metformin",
+    "metoprolol", "montelukast", "naproxen", "omeprazole", "pantoprazole", "paracetamol", "pravastatin",
+    "prednisone", "rosuvastatin", "sertraline", "simvastatin", "tamsulosin", "tramadol", "trazodone", "tylenol",
+    "vitamin", "warfarin", "zolpidem"}
+PILL_COLORS = {"blue", "red", "yellow", "green", "white", "orange", "pink", "purple", "brown", "black", "gray", "grey"}
+_PARTS = r"a\.?m\.?|p\.?m\.?|in the morning|in the afternoon|in the evening|at night"
+# a number is only a time with minutes or a part of the day ("8:00", "8 AM", "6:40 in the evening"), not "2 pills"
+TIME_RE = re.compile(rf"\b(\d{{1,2}})(?::(\d{{2}}))?\s*({_PARTS})(?![a-z])|\b(\d{{1,2}}):(\d{{2}})\b|\b(noon|midnight)\b",
+                     re.I)
 
 
 def _gemini(prompt: str, data: bytes = None, mime: str = None, as_json: bool = False, model: str = GEMINI_MODEL) -> str:
@@ -206,11 +223,19 @@ def answer(question: str, dose_log: list[dict]) -> str:
     """
     if not question.strip():
         return DIDNT_HEAR
+    log = dose_log[:50]
+    if not log:
+        return NO_DOSES  # from the data: nothing for the model to read, so it can only make things up
+    names = {x["medicine"].lower() for x in log}
+    # asking about a medicine that isn't in the log: answer from the data too (the model invented doses for it)
+    for drug in sorted(_drugs_in(question)):
+        if not _in_log(drug, names):
+            return f"Your log doesn't mention {drug}."
     now = datetime.now()
     lines = []
     # small local models get days wrong from raw timestamps ("yesterday" became "today"), so Python writes
     # "Yesterday, 8 in the morning" and the model only reads. Newest 50: Ollama's default context is 4096 tokens.
-    for x in dose_log[:50]:
+    for x in log:
         due = datetime.fromisoformat(x["due_at"])
         taken = f"taken at {_clock(datetime.fromisoformat(x['taken_at']))}" if x["taken_at"] else "taken"
         did = {"taken": taken, "missed": "missed", "pending": "due now, not taken yet"}.get(x["status"], x["status"])
@@ -228,7 +253,68 @@ def answer(question: str, dose_log: list[dict]) -> str:
         {"role": "user", "content": f"It is now {now:%A %B} {now.day}, {_clock(now)}.\nDose log, newest first:\n"
                                     + "\n".join(lines) + f"\n\nQuestion: {question}"}])
     # a refusal is exact: the small model sometimes adds "facts" before it, once a dose that never existed
-    return DONT_KNOW if DONT_KNOW.rstrip(".") in text else text
+    if DONT_KNOW.rstrip(".") in text:
+        return DONT_KNOW
+    why = _ungrounded(text, log, now)
+    if why:
+        print(f"[ai] answer not in the dose log ({why}), said DONT_KNOW instead: {text!r}")
+        return DONT_KNOW
+    return text
+
+
+def _drugs_in(text: str) -> set[str]:
+    return set(re.findall(r"[a-z]+", text.lower())) & COMMON_DRUGS
+
+
+def _in_log(word: str, names: set[str]) -> bool:
+    return any(word in n or n in word for n in names)  # "vitamin" is in "vitamin d"
+
+
+def _times_in(text: str) -> list[tuple[int, int, bool]]:
+    """(hour 0-23, minute, sure) for each time in an answer; sure=False for a bare "8:00" (8 or 20)."""
+    out = []
+    for h, m, part, h2, m2, word in TIME_RE.findall(text):
+        if word:
+            out.append((12 if word.lower() == "noon" else 0, 0, True))
+            continue
+        if h2:
+            hour, minute = int(h2), int(m2)
+            out.append((hour % 24, minute, hour > 12 or hour == 0))
+            continue
+        hour, minute, part = int(h), int(m or 0), part.lower().replace(".", "")
+        if part == "am" or part == "in the morning":
+            hour %= 12
+        elif part == "pm" or part == "in the evening":
+            hour = hour % 12 + 12
+        elif part == "in the afternoon":
+            hour = 12 if hour == 12 else hour + 12
+        elif part == "at night":  # _clock: before 4 or from 9 at night
+            hour = 0 if hour == 12 else hour + 12 if hour >= 9 else hour
+        out.append((hour, minute, True))
+    return out
+
+
+def _ungrounded(text: str, log: list[dict], now: datetime) -> str:
+    """Why an answer isn't backed by the dose log ("" if it is): every medicine, pill color and time it names
+    must be in the log (a time can also be "now")."""
+    names = {x["medicine"].lower() for x in log}
+    for drug in _drugs_in(text):
+        if not _in_log(drug, names):
+            return f"medicine {drug}"
+    colors = {(x.get("color") or "").lower() for x in log}
+    for color in set(re.findall(r"[a-z]+", text.lower())) & PILL_COLORS:
+        if color not in colors:
+            return f"color {color}"
+    times = {(now.hour, now.minute)}
+    for x in log:
+        for stamp in (x["due_at"], x["taken_at"]):
+            if stamp:
+                d = datetime.fromisoformat(stamp)
+                times.add((d.hour, d.minute))
+    for hour, minute, sure in _times_in(text):
+        if (hour, minute) not in times and (sure or (hour + 12, minute) not in times):
+            return f"time {hour}:{minute:02d}"
+    return ""
 
 
 def _clock(d: datetime) -> str:

@@ -4,6 +4,8 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 02:45 Thanh (ai, safety): **Voice answers can no longer invent doses.** With an empty or short log, Gemma 4 made doses up every time ("You took metformin at 8:00 AM and 8:00 PM" for Mrs. Hoa, who has no doses and no metformin: 6 of 6 tries), against the hard rule. `ai.answer` now: an empty log answers "There are no doses in your log yet." without the model; a question about a medicine not in the log answers "Your log doesn't mention X." from the data; and every medicine, pill color and time in the model's answer must be in the log (or be "now"), otherwise it says `DONT_KNOW` (and logs `[ai] answer not in the dose log (...)`). Tested: 11 canned cases (no model) plus live on Mrs. Hoa (empty) and Grandma Lan (true answers still pass).
+  - Minh Pham: this is in your `ai/__init__.py` (`answer`, plus `NO_DOSES`, `COMMON_DRUGS`, `PILL_COLORS`, `TIME_RE`, `_ungrounded`); `python -m ai.test_ai` still passes.
 - 02:15 Thanh (pi, screen route): **The screen shows a voice answer as the cabinet says it** (it was ~2 s early: the Pi still had to download, convert and send the audio to the ESP32). `/ai/ask` no longer saves the answer for the screen; the Pi posts it to the new `POST /cabinet/{id}/answer` right when the ESP32 has the audio, or anyway if playback fails. Contract table updated.
   - Minh Dau: that route is in `backend/main.py` next to `GET /cabinet/{id}/answer`; `/ai/ask` is back to just returning `{text, audio_url}`.
   - Thanh: on the Pi `git pull` and `sudo systemctl restart cabinet.service`.
