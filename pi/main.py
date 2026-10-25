@@ -97,6 +97,10 @@ def snap(path: str = "/tmp/slot.jpg") -> str:
     return path
 
 
+class EspError(RuntimeError):
+    """The ESP32 answered "err ...": the link is fine, the command wasn't."""
+
+
 class Esp32:
     """The ESP32-S3 audio unit on USB serial. One command at a time; protocol in pi/esp32/code.py."""
 
@@ -104,6 +108,7 @@ class Esp32:
         import serial
 
         self.link = serial.Serial(port, timeout=0.2)
+        self.link.reset_input_buffer()  # leftovers from before a reconnect would misalign the replies
         self.pressed = False  # its talk button was pressed since button_pressed() last looked
 
     def _line(self, timeout: float) -> str:
@@ -125,7 +130,7 @@ class Esp32:
         self.link.write(command.encode() + b"\n" + payload)
         reply = self._line(timeout)
         if reply.startswith("err"):
-            raise RuntimeError(f"ESP32: {reply[4:]}")
+            raise EspError(f"ESP32: {reply[4:]}")
         return reply
 
     def play(self, name: str):
@@ -169,12 +174,14 @@ def _find_esp32() -> str:
 
 
 def _with_esp32(fn):
-    """Run fn(esp32); on any error drop the connection so the next call reconnects (unplugged, reset)."""
+    """Run fn(esp32); on a link error drop the connection so the next call reconnects (unplugged, reset)."""
     global _esp
     try:
         if _esp is None:
             _esp = Esp32(ESP32_PORT or _find_esp32())
         return fn(_esp)
+    except EspError:
+        raise  # the board answered: keep the connection
     except Exception:
         if _esp is not None:
             try:
@@ -264,10 +271,15 @@ def talk_button_pressed() -> bool:
 
 def play_backup(name: str):
     """Offline fallback: time_for_pill, good_job, already_took, missed."""
-    if AUDIO == "esp32" and "audio" not in MOCK:
-        _with_esp32(lambda esp: esp.play(name))  # stored on the ESP32 as /sounds/NAME.wav
-        return
     path = os.path.join(SOUNDS, f"{name}.mp3")
+    if AUDIO == "esp32" and "audio" not in MOCK:
+        try:
+            _with_esp32(lambda esp: esp.play(name))  # stored on the ESP32 as /sounds/NAME.wav
+            return
+        except EspError as e:
+            if not os.path.exists(path):
+                raise
+            print(f"[audio] {e}; sending the Pi's copy")  # _play below converts and sends it
     if "audio" not in MOCK and not os.path.exists(path):
         print(f"[audio] no backup sound {path}")
         return

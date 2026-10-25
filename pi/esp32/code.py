@@ -42,8 +42,18 @@ if BUTTON_PIN:
     button.switch_to_input(pull=digitalio.Pull.UP)
 
 
+def write_all(data):
+    """usb_cdc's write can send only part when the Pi is slow to read: keep going until it's all out."""
+    view = memoryview(data)
+    deadline = time.monotonic() + 5
+    while len(view):
+        view = view[link.write(view) or 0:]
+        if len(view) and time.monotonic() > deadline:
+            raise OSError("the Pi stopped reading")
+
+
 def send(line):
-    link.write((line + "\n").encode())
+    write_all((line + "\n").encode())
 
 
 def play_file(path):
@@ -100,15 +110,15 @@ def record(seconds):
             while left:
                 n = mic.record(samples, min(CHUNK, left))
                 if n:
-                    link.write(memoryview(samples)[:n])
+                    write_all(bytes(memoryview(samples)[:n]))  # raw bytes, 2 per sample
                     left -= n
         except Exception as e:
             # the Pi is waiting for exactly total*2 bytes: fill with silence, report on the console
             print("[mic] failed:", repr(e))
-            zeros = array.array("h", [0] * CHUNK)
+            zeros = bytes(2 * CHUNK)
             while left:
                 n = min(CHUNK, left)
-                link.write(memoryview(zeros)[:n])
+                write_all(zeros[:2 * n])
                 left -= n
     finally:
         mic.deinit()
@@ -155,4 +165,7 @@ while True:
     try:
         run(line)
     except Exception as e:
-        send("err %s" % e)
+        try:
+            send("err %s" % e)
+        except Exception:
+            pass  # the Pi isn't reading; it reconnects and starts over
