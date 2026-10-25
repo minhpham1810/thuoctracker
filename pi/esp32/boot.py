@@ -3,9 +3,14 @@ import digitalio
 import microcontroller
 import storage
 import usb_cdc
+import usb_hid
+import usb_midi
 
 # A second USB serial port just for the Pi (/dev/ttyACM1), so commands and audio
-# never mix with the console's prints.
+# never mix with the console's prints. The S3 has too few USB endpoints for that plus
+# the default keyboard/mouse and MIDI devices, so those two (unused) go.
+usb_hid.disable()
+usb_midi.disable()
 usb_cdc.enable(console=True, data=True)
 
 # code.py saves the Pi's spoken answers to /say.wav, so it needs to write to the
