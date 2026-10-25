@@ -163,7 +163,7 @@ class Esp32:
 
         # a board that stops reading (crashed, or an old code.py that doesn't know the command) must
         # not hang the cabinet: give up on the write instead of waiting forever
-        self.link.write_timeout = 5 + len(payload) / 50_000
+        self.link.write_timeout = 5 + len(payload) / 20_000
         try:
             self.link.write(command.encode() + b"\n" + payload)
         except serial.SerialTimeoutException:

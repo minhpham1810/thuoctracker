@@ -209,14 +209,15 @@ def play_file(path):
 
 def drain(size):
     """Read and drop size bytes, so the next command still lines up after a failure."""
-    buf = bytearray(2048)
+    buf = bytearray(4096)
     deadline = time.monotonic() + 10 + size / 20000
-    while size and time.monotonic() < deadline:
-        service_controls()
-        got = link.readinto(memoryview(buf)[:min(size, len(buf))]) or 0
-        size -= got
-        if not got:
-            time.sleep(0.001)
+    link.timeout = 0.05  # short blocking reads: fast (see play_pcm)
+    try:
+        while size and time.monotonic() < deadline:
+            size -= link.readinto(memoryview(buf)[:min(size, len(buf))]) or 0
+            service_controls()
+    finally:
+        link.timeout = 0
 
 
 def play_pcm(size):
@@ -230,20 +231,24 @@ def play_pcm(size):
     except Exception:  # out of memory, or anything else: the audio must still be read off USB
         drain(size)
         raise
-    # Loop ourselves: one big readinto() with a timeout stops at about half (CircuitPython's loop
-    # compares what it has read with what is left), and a bytearray takes any byte count.
+    # Short blocking reads of up to 4 KB, in a loop. Inside a blocking read CircuitPython keeps USB
+    # running with no Python in between (fast); non-blocking reads plus sleeps got one 64-byte
+    # packet per pass and were too slow. Small reads also dodge a CircuitPython bug: one big
+    # readinto() with a timeout stops at about half (it compares what it read with what is left).
     view = memoryview(raw)
     got = 0
-    deadline = time.monotonic() + 10 + size / 20000
-    while got < size and time.monotonic() < deadline:
-        n = link.readinto(view[got:]) or 0  # timeout 0: whatever has arrived
-        got += n
-        if not n:
+    start = time.monotonic()
+    deadline = start + 10 + size / 20000
+    link.timeout = 0.05
+    try:
+        while got < size and time.monotonic() < deadline:
+            got += link.readinto(view[got:got + 4096]) or 0
             service_controls()
-            time.sleep(0.001)  # lets USB take in more
+    finally:
+        link.timeout = 0
     if got != size:
         drain(size - got)
-        raise OSError("got %d of %d audio bytes" % (got, size))
+        raise OSError("got %d of %d audio bytes in %.1f s" % (got, size, time.monotonic() - start))
     samples = array.array("h", raw)  # bytes are taken as raw samples: size // 2 of them
     del raw, view
     sound = audiocore.RawSample(samples, sample_rate=RATE)
