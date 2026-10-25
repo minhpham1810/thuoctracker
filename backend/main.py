@@ -665,11 +665,14 @@ def read_label(photo: UploadFile = File(...), u=Depends(me)):
     fake = {"name": "Aspirin", "dose": "1 pill", "times": ["08:00", "20:00"],
             "expiration": str(date.today() + timedelta(days=180)), "quantity": 30}
     # fake only while ai.read_label is unwritten. On a real failure, never return a made-up medicine
-    # someone could save without noticing: error out, and the app/dashboard say "fill it in by hand".
-    draft = try_ai(ai.read_label, photo.file.read(), fallback=fake, on_error=None)
-    if draft is None:
-        raise HTTPException(502, "The label reader isn't working right now")
-    return draft
+    # someone could save without noticing: error out with the reason, and the app/dashboard say "fill it in by hand".
+    try:
+        return ai.read_label(photo.file.read())
+    except NotImplementedError:
+        return fake
+    except Exception as e:
+        print(f"[ai] read_label failed: {e!r}")
+        raise HTTPException(502, f"label reader failed: {str(e)[:200]}")
 
 
 @app.post("/ai/ask")

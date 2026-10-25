@@ -4,6 +4,12 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 00:30 Minh Dau (ai + backend): **Fixed "Couldn't read the label" for everyone.** Cause: our shared Gemini key's free tier allows `gemini-3.5-flash` only about 1-2 image requests a minute, shared by every laptop, and the Gemini fallback sent the full 3+ MB phone photo. Every scan got `429 Too Many Requests`.
+  - Labels now use **`gemini-3.5-flash-lite`**: 4 scans in a row read correctly, about 7 s each. Pill counting stays on `gemini-3.5-flash`.
+  - The photo is shrunk for Gemini too, and a 429 waits the delay Gemini asks for (max 15 s) and retries once.
+  - The app and dashboard now show the real reason on failure, e.g. "label reader failed: local model: 500 …; Gemini: 429 Too Many Requests".
+  - **Minh Pham:** your Mac should have read labels with local `gemma4:e4b-mlx` before ever reaching Gemini. Scan once and check the app's message or your uvicorn console for `[ai] Ollama label read failed (...)`; that says why the local model failed (e.g. MLX not supporting images or `format`). Tell me what it says.
+
 - 23:10 Thanh (ai, one line): **Voice questions also run on Windows/Linux with an NVIDIA GPU.** `OLLAMA_MODEL` in `.env` picks the Ollama model (default stays `gemma4:e4b-mlx` for the Mac). `gemma4:e4b` (the non-MLX build) hears audio on Ollama 0.40.5: tested on Thanh's laptop (RTX 5070) with exact transcripts, ~2 s per step once loaded, ~30 s for the first load; `/ai/ask` end to end ~7-8 s with ElevenLabs. Your label change picks up the same `gemma4:e4b` here, which is already pulled. The demo backend on Thanh's laptop now uses it, so voice no longer depends on Gemini's 20-a-day free quota (labels and pill counts still do).
   - Minh Pham: I edited your `ai/__init__.py` (only `OLLAMA_MODEL = os.getenv(...)` plus a comment). The ESP32 audio path itself was tested on the Pi earlier (with the fallback answer).
 - 21:45 Minh Dau (ai): **Label scanning now prefers Gemma 4** (order: gemma4, qwen2.5vl, llama3.2-vision, minicpm-v, llava). This replaces the setup steps in the 21:30 line below.

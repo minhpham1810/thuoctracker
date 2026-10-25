@@ -11,6 +11,7 @@ import io
 import json
 import os
 import re
+import time
 from datetime import date, datetime
 
 import requests
@@ -18,7 +19,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent"  # 2.5 is closed to new keys; 3.8 timed out
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent"
+GEMINI_MODEL = "gemini-3.5-flash"  # pill counts. 2.5 is closed to new keys; 3.8 timed out
+# labels: the free tier allows flash only ~1-2 image requests a minute (shared by every laptop on this key), so
+# scans kept failing with 429. Lite read 4/4 test labels right in ~7 s each, back to back (tested 2026-10-25).
+GEMINI_LABEL_MODEL = "gemini-3.5-flash-lite"
 # Ollama hears audio only on its MLX engine, so it must run on an Apple Silicon Mac
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 # Gemma 4 E4B hears and answers a question in ~0.5 s on an M5 Pro. 12b-mlx answers a bit better, but in
@@ -34,18 +39,43 @@ DONT_KNOW = "I don't know, please ask your doctor."
 DIDNT_HEAR = "Sorry, I didn't hear a question. Please try again."
 
 
-def _gemini(prompt: str, data: bytes = None, mime: str = None, as_json: bool = False) -> str:
+def _gemini(prompt: str, data: bytes = None, mime: str = None, as_json: bool = False, model: str = GEMINI_MODEL) -> str:
     parts = [{"text": prompt}]
     if data:
         parts.append({"inline_data": {"mime_type": mime, "data": base64.b64encode(data).decode()}})
     body = {"contents": [{"parts": parts}], "generationConfig": {"temperature": 0}}
     if as_json:
         body["generationConfig"]["responseMimeType"] = "application/json"
-    # key in a header, not the URL, so it never shows up in error messages or logs
-    r = requests.post(GEMINI_URL, headers={"x-goog-api-key": os.environ["GEMINI_API_KEY"]}, json=body, timeout=30)
+    for attempt in (1, 2):
+        # key in a header, not the URL, so it never shows up in error messages or logs
+        r = requests.post(GEMINI_URL.format(model), headers={"x-goog-api-key": os.environ["GEMINI_API_KEY"]}, json=body, timeout=30)
+        if r.status_code == 429 and attempt == 1:  # free tier: only a few requests a minute; wait and try once more
+            time.sleep(_retry_after(r))
+            continue
+        break
     r.raise_for_status()
     parts = r.json()["candidates"][0]["content"]["parts"]
     return "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
+
+
+def _retry_after(r) -> float:
+    """Seconds Gemini asks us to wait ("retryDelay": "12s"), capped so the phone isn't kept waiting long."""
+    try:
+        for d in r.json()["error"]["details"]:
+            if "retryDelay" in d:
+                return min(float(d["retryDelay"].rstrip("s")), 15)
+    except Exception:
+        pass
+    return 5
+
+
+def _why(e: Exception) -> str:
+    """Short reason for the person scanning: "429 Too Many Requests", "not running"..."""
+    if isinstance(e, requests.HTTPError) and e.response is not None:
+        return f"{e.response.status_code} {e.response.reason}"
+    if isinstance(e, requests.ConnectionError):
+        return "not running"
+    return str(e)[:120]
 
 
 def _ollama(messages: list[dict], model: str = OLLAMA_MODEL, format=None, timeout: int = 60) -> str:
@@ -83,9 +113,13 @@ def read_label(image: bytes) -> dict:
                                  model=_vision_model(), format=LABEL_SCHEMA, timeout=120))  # CPU-only laptops are slow
     except Exception as e:
         if not os.getenv("GEMINI_API_KEY"):
-            raise
+            raise RuntimeError(f"local model: {_why(e)}") from e
         print(f"[ai] Ollama label read failed ({e!r}); using Gemini")
-        out = json.loads(_gemini(LABEL_PROMPT, image, "image/jpeg", as_json=True))
+        try:
+            # shrunk too: a full phone photo uses up the free tier's per-minute allowance in one or two scans
+            out = json.loads(_gemini(LABEL_PROMPT, _shrink(image), "image/jpeg", as_json=True, model=GEMINI_LABEL_MODEL))
+        except Exception as e2:
+            raise RuntimeError(f"local model: {_why(e)}; Gemini: {_why(e2)}") from e2
     return _clean_label(out)
 
 

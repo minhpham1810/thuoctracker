@@ -35,6 +35,25 @@ with mock.patch("ai.requests.get", side_effect=ai.requests.ConnectionError("no o
     assert ai.read_label(b"jpg") == {"name": "Aspirin", "dose": "1 pill", "times": ["08:00"], "expiration": "2027-01-01",
                                      "quantity": None}
     assert p.call_args.kwargs["json"]["generationConfig"]["responseMimeType"] == "application/json"
+    assert "gemini-3.5-flash-lite:" in p.call_args.args[0]  # labels use lite (higher free-tier limit)
+
+# Gemini rate limit: wait the retryDelay it asks for, try once more
+limited = mock.Mock(status_code=429)
+limited.json.return_value = {"error": {"details": [{"retryDelay": "0s"}]}}
+ok_label = fake(json.dumps({"name": "Aspirin"}))
+ok_label.status_code = 200
+with mock.patch("ai.requests.get", side_effect=ai.requests.ConnectionError("no ollama")),         mock.patch("ai.requests.post", side_effect=[limited, ok_label]) as p:
+    assert ai.read_label(b"jpg")["name"] == "Aspirin" and p.call_count == 2
+# both fail: the reason reaches the person scanning ("Gemini: 429 Too Many Requests")
+still = mock.Mock(status_code=429, reason="Too Many Requests")
+still.json.return_value = {"error": {"details": [{"retryDelay": "0s"}]}}
+still.raise_for_status.side_effect = ai.requests.HTTPError(response=still)
+with mock.patch("ai.requests.get", side_effect=ai.requests.ConnectionError("no ollama")),         mock.patch("ai.requests.post", return_value=still):
+    try:
+        ai.read_label(b"jpg")
+        raise AssertionError("must raise")
+    except RuntimeError as e:
+        assert str(e) == "local model: not running; Gemini: 429 Too Many Requests", str(e)
 
 # labels: Ollama vision model, picked from what's installed (gemma4 before qwen2.5vl), loose output cleaned up
 loose = {"name": " Metformin ", "dose": "1 tablet", "times": ["8:00", "20:00", "noon"], "expiration": "1/31/2027",
