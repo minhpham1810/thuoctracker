@@ -69,6 +69,8 @@ CREATE TABLE IF NOT EXISTS cabinet_commands (
   cmd jsonb NOT NULL
 );
 CREATE TABLE IF NOT EXISTS cabinet_state (patient_id int PRIMARY KEY, state jsonb NOT NULL);
+-- the last voice answer per cabinet, so the screen can show what the cabinet just said
+CREATE TABLE IF NOT EXISTS cabinet_answer (patient_id int PRIMARY KEY, text text NOT NULL, at timestamp NOT NULL);
 CREATE TABLE IF NOT EXISTS photo_counts (
   dose_id int NOT NULL, phase text NOT NULL, count int,
   PRIMARY KEY (dose_id, phase)

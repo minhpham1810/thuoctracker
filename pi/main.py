@@ -379,6 +379,9 @@ def attempt(what: str, fn, *args):
 
 def handle(cmd: dict):
     print(f"[cmd] {cmd}")
+    if cmd.get("ask"):  # "Ask a question" on the screen: its browser can't reach the ESP32's mic
+        attempt("ask", ask_question)
+        return
     slot = cmd.get("open_slot")
     if not slot:  # reminder or feedback: audio only
         attempt("audio", say, cmd)

@@ -12,17 +12,24 @@ import Setup from "./setup";
 const STATE_MS = 1000;
 const MEDS_MS = 10_000;
 const ASK_MAX_MS = 8000; // stop recording on its own if the patient doesn't tap again
+// No mic in this browser (the Pi kiosk: the mic is on the ESP32): the cabinet asks instead. The Pi picks
+// the tap up within ~2 s, speaks the prompt (~2.5 s) and records 5 s; then the answer takes a few seconds.
+const CABINET_LISTEN_MS = 9500;
+const CABINET_ASK_MAX_MS = 60_000; // first question after a while: the model takes ~30 s to load
 const ANSWER_MS = 15_000; // how long the answer stays on screen
 const DETAIL_MS = 15_000; // a tapped box's details close on their own
 const SHEET_MS = 30_000; // the menu and today's list close on their own (longer: there's more to read)
 const LOW = 5; // backend's low-pill rule; display only
 const EXPIRING_DAYS = 7; // backend's expiring-soon rule; display only
 
+// cabinet: the question goes through the cabinet's own mic and speaker (asked = the backend's "at")
+type ViaCabinet = { asked: string; since: number };
 type Ask =
   | { phase: "off" }
-  | { phase: "listening" }
-  | { phase: "thinking" }
+  | { phase: "listening"; cabinet?: ViaCabinet }
+  | { phase: "thinking"; cabinet?: ViaCabinet }
   | { phase: "answer"; text: string };
+const SORRY = "Sorry, I can't answer right now. Please try again.";
 
 // Screen preferences, kept in this browser (the Pi) only
 type Theme = "auto" | "light" | "dark";
@@ -170,15 +177,13 @@ export default function Cabinet() {
 
   // Voice question: record in the browser -> WAV -> /ai/ask (local Gemma answers from the dose log) -> play the ElevenLabs MP3.
   async function startAsk() {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      // browsers only allow the mic on https or localhost; the Pi kiosk passes a Chromium flag (pi/kiosk.sh)
-      return setAsk({ phase: "answer", text: "The microphone isn't working on this screen. Please ask a family member." });
-    }
+    // browsers only allow the mic on https or localhost; the Pi kiosk passes a Chromium flag (pi/kiosk.sh)
+    if (!navigator.mediaDevices?.getUserMedia) return askCabinet();
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
-      return setAsk({ phase: "answer", text: "I can't use the microphone. Please ask a family member." });
+      return askCabinet(); // no mic here (on the Pi it's on the ESP32): the cabinet listens instead
     }
     const rec = new MediaRecorder(stream);
     const chunks: Blob[] = [];
@@ -194,7 +199,7 @@ export default function Cabinet() {
         setAsk({ phase: "answer", text: r.text });
         if (r.audio_url) new Audio(`/api${r.audio_url}`).play().catch(() => {}); // text stays on screen if audio fails
       } catch {
-        setAsk({ phase: "answer", text: "Sorry, I can't answer right now. Please try again." });
+        setAsk({ phase: "answer", text: SORRY });
       }
     };
     recorder.current = rec;
@@ -203,8 +208,33 @@ export default function Cabinet() {
     setTimeout(() => rec.state === "recording" && rec.stop(), ASK_MAX_MS);
   }
 
+  // The cabinet's mic and speaker (ESP32): the Pi gets an "ask" from the backend, says "I'm listening",
+  // records, asks /ai/ask and plays the answer. This screen just shows it (the effect below polls).
+  async function askCabinet() {
+    try {
+      const { at } = await api<{ at: string }>(`/cabinet/${patientId}/ask`, { method: "POST" });
+      setAsk({ phase: "listening", cabinet: { asked: at, since: Date.now() } });
+    } catch {
+      setAsk({ phase: "answer", text: SORRY });
+    }
+  }
+
+  const viaCabinet = ask.phase === "listening" || ask.phase === "thinking" ? ask.cabinet : undefined;
+  useEffect(() => {
+    if (!viaCabinet) return;
+    const t = setInterval(async () => {
+      const waited = Date.now() - viaCabinet.since;
+      if (waited > CABINET_ASK_MAX_MS) return setAsk({ phase: "answer", text: SORRY });
+      if (waited > CABINET_LISTEN_MS) setAsk((a) => (a.phase === "listening" ? { phase: "thinking", cabinet: viaCabinet } : a));
+      const a = await api<{ text?: string; at?: string }>(`/cabinet/${patientId}/answer`).catch(() => null);
+      // same backend clock, same ISO format: a later answer sorts after the question
+      if (a?.text && a.at && a.at > viaCabinet.asked) setAsk({ phase: "answer", text: a.text });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [viaCabinet, patientId]);
+
   function askButton() {
-    if (ask.phase === "listening") recorder.current?.stop();
+    if (ask.phase === "listening" && !ask.cabinet) recorder.current?.stop();
     else if (ask.phase === "off" || ask.phase === "answer") startAsk();
   }
 
@@ -267,7 +297,9 @@ export default function Cabinet() {
                   <h1 className="cab-msg cab-answer">
                     {ask.phase === "listening" ? "I'm listening…" : ask.phase === "thinking" ? "Let me check…" : ask.text}
                   </h1>
-                  {ask.phase === "listening" && <p className="cab-sub">Ask your question, then tap <b>Done</b>.</p>}
+                  {ask.phase === "listening" && (ask.cabinet
+                    ? <p className="cab-sub">When the cabinet says <b>&ldquo;I&apos;m listening&rdquo;</b>, ask your question.</p>
+                    : <p className="cab-sub">Ask your question, then tap <b>Done</b>.</p>)}
                 </>
               ) : mode === "idle" ? (
                 <>
@@ -293,9 +325,10 @@ export default function Cabinet() {
             </button>
           ) : (
             <button type="button" className={`cab-ask${ask.phase === "listening" ? " listening" : ""}`}
-              onClick={askButton} disabled={ask.phase === "thinking"}>
+              onClick={askButton} disabled={ask.phase === "thinking" || !!viaCabinet}>
               <Icon name="mic" />
-              {ask.phase === "listening" ? "Done" : ask.phase === "thinking" ? "Thinking…" : "Ask a question"}
+              {ask.phase === "listening" ? (ask.cabinet ? "Listening…" : "Done")
+                : ask.phase === "thinking" ? "Thinking…" : "Ask a question"}
             </button>
           )}
         </section>

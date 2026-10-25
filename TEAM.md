@@ -4,6 +4,9 @@
 
 Newest first. Everyone (and every agent) reads this after `git pull` and adds a line after pushing something others use. Format: `- HH:MM <name> (<area>): <what changed / what is ready / what you need to do>`.
 
+- 01:45 Thanh (cabinet screen + pi; 2 backend routes): **The screen's "Ask a question" works on the Pi now.** The kiosk's browser can't use the ESP32's mic, so when the browser has no mic the button asks the cabinet instead: `POST /cabinet/{id}/ask` queues an `ask` command, the Pi says "I'm listening", records on the ESP32, calls `/ai/ask`, plays the answer; the screen shows "I'm listening" / "Let me check" and then the answer from `GET /cabinet/{id}/answer`. Laptops with a mic still record in the browser. Contract table updated.
+  - Minh Dau: I added those two routes and a `cabinet_answer` table (one row per patient: last answer text + time) to `backend/main.py` / `db.py`; `/ai/ask` now also saves its answer there, and `/cabinet/{id}/command` drops an `ask` older than 30 s. Also in `seed()`'s TRUNCATE.
+  - Thanh: on the Pi `git pull` and restart `cabinet.service` (it runs the ask), then reload the kiosk.
 - 01:30 Minh Dau (app): **Fixed phone label scans failing with "Unsupported FormDataPart implementation".** In Expo SDK 58, `fetch` rejects React Native's old `{uri, name, type}` form part, so the photo never reached the backend. The app now uploads it as an `expo-file-system` `File`, which SDK 58 accepts. Also, the add-medicine form no longer starts pre-filled with "1 pill / 08:00 / 30", which looked like a scan result when nothing had been read. Fields start empty, with "e.g." hints. Pull and reload the app (`r` in Expo).
 
 - 01:40 Thanh (pi + esp32): **Voice works end to end on the real cabinet.** Pi `esp32 ask` (or a talk button): the ESP32 speaker says "I'm listening. Please ask your question.", the INMP441 records 5 s, the laptop's local Gemma 4 answers from the dose log, the answer plays on the ESP32's 8 Ohm speaker. The board runs the teammate's `code.py` (volume knob + mute, Hall off, `status`) merged with the new `audio` command; it and `boot.py` are now in `pi/esp32/`. Fixes found on hardware: S3 USB endpoint limit (drive hidden in normal runs), a Linux echo at port open (ping handshake), and a CircuitPython bug where one big `readinto()` stops at half (board reads in 4 KB blocking chunks).
@@ -159,6 +162,8 @@ The Pi and the cabinet screen both poll. If they share one route, whoever reads 
 | `POST /cabinet/{id}/photo?dose_id=7&phase=before\|after` (photo) | Pi | `{"count": 10}` or `{"count": null}` if counting failed; after the "after" photo the backend decides taken (before − after == 1). Never guesses: on `null` the dose stays pending until "I took it" |
 | `GET /cabinet/{id}/today` | Screen | `{name, medicines, doses}` |
 | `POST /cabinet/{id}/taken?dose_id=7` | Screen "I took it" button | updated `DoseLog` |
+| `POST /cabinet/{id}/ask` | Screen "Ask a question" when its browser has no mic (the Pi kiosk: the mic is on the ESP32). Queues `{"ask": true, "at"}` for the Pi; dropped if the Pi doesn't take it within 30 s | `{"at": "2026-10-25T01:35:24.9"}` |
+| `GET /cabinet/{id}/answer` | Screen: the last voice answer (set by every `/ai/ask`); show it once `at` is newer than the ask's `at` | `{"text", "at"}` or `{}` |
 | `POST /ai/ask?patient_id=1` (audio) | Pi | `{"text": "...", "audio_url": "/audio/q12.mp3"}` |
 | `GET /audio/{file}.mp3` | Pi | MP3 the backend made with `speak()` |
 

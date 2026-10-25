@@ -92,7 +92,7 @@ def seed():
     pw = hash_password(DEMO_PASSWORD)
     with pool.connection() as c, c.transaction():
         c.execute("TRUNCATE users, medicines, doses, alerts, messages, sessions, cabinet_commands, cabinet_state,"
-                  " photo_counts, alerts_sent RESTART IDENTITY CASCADE")
+                  " cabinet_answer, photo_counts, alerts_sent RESTART IDENTITY CASCADE")
         cur = c.cursor()
         # patients keep ids 1-3: the cabinet screen and the Pi use ?patient=1. Doctor first so FKs resolve.
         cur.executemany(
@@ -683,6 +683,10 @@ def ask(patient_id: int, audio: UploadFile = File(...)):
     # no transcript (Ollama down, model not pulled, audio not WAV): say sorry, never answer a question nobody asked
     question = try_ai(ai.transcribe, audio.file.read(), fallback=None)
     text = sorry if question is None else try_ai(ai.answer, question, dose_log(patient_id), fallback=sorry)
+    # the screen shows it when the question came through the cabinet's mic (GET /cabinet/{id}/answer)
+    q("INSERT INTO cabinet_answer (patient_id, text, at) VALUES (%s, %s, %s)"
+      " ON CONFLICT (patient_id) DO UPDATE SET text = EXCLUDED.text, at = EXCLUDED.at",
+      patient_id, text, datetime.now())
     return {"text": text, "audio_url": speech_url(text)}
 
 
@@ -690,9 +694,34 @@ def ask(patient_id: int, audio: UploadFile = File(...)):
 @app.get("/cabinet/{patient_id}/command")
 def cabinet_command(patient_id: int):
     """Pi only. Each command is handed out once (SKIP LOCKED: two backends can't hand out the same one)."""
+    # a screen "ask" the Pi didn't pick up in time would start recording out of the blue later: drop it
+    q("DELETE FROM cabinet_commands WHERE patient_id = %s AND cmd ? 'ask' AND (cmd->>'at')::timestamp < %s",
+      patient_id, datetime.now() - ASK_FRESH)
     row = q1("DELETE FROM cabinet_commands WHERE id = (SELECT id FROM cabinet_commands WHERE patient_id = %s"
              " ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING cmd", patient_id)
     return row["cmd"] if row else {}
+
+
+ASK_FRESH = timedelta(seconds=30)  # a screen tap the Pi hasn't picked up by then is dropped
+
+
+@app.post("/cabinet/{patient_id}/ask")
+def cabinet_ask(patient_id: int):
+    """Cabinet screen's "Ask a question" when its browser has no mic (the Pi kiosk: the mic is on the
+    ESP32). Queues an "ask" for the Pi, which speaks the prompt, records, calls /ai/ask and plays the
+    answer. The screen then polls /answer for one newer than the returned "at"."""
+    get_patient(patient_id)
+    now = datetime.now()
+    q("DELETE FROM cabinet_commands WHERE patient_id = %s AND cmd ? 'ask'", patient_id)  # one at a time
+    push_command(patient_id, {"ask": True, "at": now.isoformat()})
+    return {"at": now.isoformat()}
+
+
+@app.get("/cabinet/{patient_id}/answer")
+def cabinet_answer(patient_id: int):
+    """Cabinet screen: the last voice answer, {"text", "at"}, or {} if none yet."""
+    row = q1("SELECT text, at FROM cabinet_answer WHERE patient_id = %s", patient_id)
+    return {"text": row["text"], "at": row["at"].isoformat()} if row else {}
 
 
 @app.get("/cabinet/{patient_id}/state")
