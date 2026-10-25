@@ -1,14 +1,16 @@
 /* Cabinet touchscreen (800x480 to 1024x600). Elderly users: huge type, high contrast, one action.
-   Sizes use vh so 800x480 is the design target; no text below 14px there. */
+   Sizes use vh so 800x480 is the design target; no text below 14px there.
+   Soft UI: buttons rise out of the screen's tint (--raise) and sink when pressed (--press), like a real button. */
 .cab {
   --tint: var(--primary-soft);
   --accent: var(--primary);
   --frame: var(--primary-strong); /* the cabinet's body, and the top bar */
-  --well: #0d4352;                /* inside of an empty box */
+  --well: #153b38;                /* inside of an empty box */
   --door: var(--card);
   --ask-ink: var(--primary-strong);
   /* text on the soft status backgrounds */
-  --ok-ink: color-mix(in srgb, var(--ok) 85%, #000); --warn-ink: #92400e; --bad-ink: var(--bad);
+  --ok-ink: color-mix(in srgb, var(--ok) 85%, #000); --warn-ink: var(--warn); --bad-ink: var(--bad);
+  --lo: color-mix(in srgb, var(--tint), #0d2b27 26%); /* the shade follows the mode's tint */
   --fs: 1; /* text size: hero, buttons, strip and cards scale; the boxes are already as big as 800x480 allows */
   height: 100vh; height: 100dvh; overflow: hidden; display: flex; flex-direction: column;
   background: var(--tint); color: var(--fg); transition: background .4s;
@@ -23,12 +25,13 @@
    Redefines the shared tokens for this screen only; buttons keep their white-on-colour fills. */
 .cab.dark {
   color-scheme: dark;
-  --bg: #0b1a1f; --card: #132a31; --fg: #e3eef0; --muted: #9db4ba; --border: #2b4850;
-  --primary-soft: #0d2229; --ok-soft: #0e2a1b; --warn-soft: #2d210b; --bad-soft: #31141a;
-  --frame: #0a2730; --well: #04141a; --door: #1c3a43;
-  --ask-ink: #8adbed; --ok-ink: #86efac; --warn-ink: #fcd34d; --bad-ink: #fca5a5;
+  --bg: #172220; --card: #1c2927; --fg: #e1ebe8; --muted: #9fb3ae; --border: #344844;
+  --primary-soft: #16211f; --ok-soft: #163024; --warn-soft: #352816; --bad-soft: #3a1f1c;
+  --frame: #183d3a; --well: #0c1f1d; --door: #23332f;
+  --ask-ink: #8fd3c8; --ok-ink: #8fe0ad; --warn-ink: #f0c27a; --bad-ink: #f5aaa0;
+  --hi: rgb(255 255 255 / .05); --lo: rgb(0 0 0 / .5);
 }
-.cab.dark .cab-ask:not(.listening) { border-color: #3aa9c4; }
+.cab.dark .cab-ask:not(.listening) { border-color: #4fa59c; }
 .cab.dark .cab-detail { background: rgb(0 0 0 / .65); }
 
 .cab-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -94,7 +97,7 @@
   gap: clamp(6px, 1.5vh, 12px); padding: clamp(7px, 1.5vh, 14px);
   background: linear-gradient(var(--frame), color-mix(in srgb, var(--frame) 82%, #000));
   border-radius: 20px;
-  box-shadow: inset 0 2px 0 rgb(255 255 255 / .18), inset 0 -3px 0 rgb(0 0 0 / .2), 0 10px 24px -10px rgb(15 43 51 / .55);
+  box-shadow: inset 0 2px 0 rgb(255 255 255 / .18), inset 0 -3px 0 rgb(0 0 0 / .2), var(--raise);
 }
 .cab-box { min-width: 0; min-height: 0; transition: opacity .3s, filter .3s; }
 .cab-box.long { grid-column: 1 / -1; }
@@ -169,30 +172,30 @@ button.cab-door::after {
 /* The one action. Pressing it sinks it, like a real button. */
 .cab-took {
   display: flex; align-items: center; justify-content: center; gap: 12px;
-  min-height: clamp(64px, 16vh, 104px); border: 0; border-radius: 18px;
+  min-height: clamp(64px, 16vh, 104px); border: 0; border-radius: 26px;
   background: var(--ok); color: #fff; font: 700 calc(clamp(26px, 6.8vh, 44px) * var(--fs))/1 var(--font-heading), sans-serif;
-  box-shadow: 0 6px 0 #0f5f2d, 0 12px 20px -8px rgb(15 95 45 / .6); transition: transform .1s, box-shadow .1s;
+  box-shadow: var(--raise), inset 0 2px 0 rgb(255 255 255 / .18); transition: transform .15s, box-shadow .15s;
 }
 .cab-took .icon { width: 1.1em; height: 1.1em; }
-.cab-took:active:not(:disabled) { transform: translateY(5px); box-shadow: 0 1px 0 #0f5f2d; }
+.cab-took:active:not(:disabled) { transform: translateY(2px); box-shadow: inset 5px 5px 12px rgb(0 0 0 / .3), inset -3px -3px 8px rgb(255 255 255 / .12); }
 .cab-took:disabled { opacity: .75; cursor: progress; }
 
 /* Voice question: secondary to "I took it", so it hides while a pill is due */
 .cab-ask {
   display: flex; align-items: center; justify-content: center; gap: 12px;
-  min-height: clamp(58px, 13vh, 88px); border: 3px solid var(--primary); border-radius: 18px;
+  min-height: clamp(58px, 13vh, 88px); border: 3px solid var(--primary); border-radius: 26px;
   background: var(--card); color: var(--ask-ink); font: 700 calc(clamp(21px, 5.2vh, 34px) * var(--fs))/1 var(--font-heading), sans-serif;
-  box-shadow: 0 4px 0 color-mix(in srgb, var(--primary) 35%, transparent); transition: transform .1s, box-shadow .1s;
+  box-shadow: var(--raise); transition: transform .15s, box-shadow .15s;
 }
 .cab-ask .icon { width: 1.1em; height: 1.1em; }
-.cab-ask:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 color-mix(in srgb, var(--primary) 35%, transparent); }
+.cab-ask:active:not(:disabled) { transform: translateY(2px); box-shadow: var(--press); }
 .cab-ask:disabled { opacity: .75; cursor: progress; }
 .cab-ask.listening { background: var(--bad); border-color: var(--bad); color: #fff; box-shadow: none; animation: listen 1.2s ease-in-out infinite; }
 @keyframes listen { 50% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--bad) 25%, transparent); } }
 .cab-answer { font-size: calc(clamp(22px, 5.8vh, 44px) * var(--fs)); }
 
 /* Today's pills, along the bottom. The whole strip is a button that opens the full list. */
-.cab-foot { background: var(--card); border-top: 1px solid var(--border); box-shadow: 0 -4px 12px -6px rgb(15 43 51 / .15); }
+.cab-foot { background: var(--card); box-shadow: 0 -8px 18px -12px var(--lo); }
 .cab-today {
   width: 100%; display: flex; align-items: center; gap: 6px; padding: clamp(6px, 1.4vh, 10px) clamp(12px, 2.4vw, 24px);
   border: 0; background: none; text-align: left; overflow: hidden; white-space: nowrap;
@@ -218,12 +221,12 @@ button.cab-door::after {
 /* Tapped box: big details card over everything */
 .cab-detail {
   position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 16px;
-  background: rgb(15 43 51 / .6); animation: fade .2s ease-out;
+  background: rgb(29 48 46 / .55); animation: fade .2s ease-out;
 }
 @keyframes fade { from { opacity: 0; } }
 .cab-detail-card {
   width: min(580px, 100%); max-height: 100%; overflow: auto; display: flex; flex-direction: column; gap: clamp(8px, 2vh, 14px);
-  padding: clamp(16px, 4vh, 28px) clamp(18px, 4vh, 30px); border-radius: 22px; background: var(--card);
+  padding: clamp(16px, 4vh, 28px) clamp(18px, 4vh, 30px); border-radius: 28px; background: var(--card);
   border-top: 10px solid var(--box-pill, var(--primary)); box-shadow: 0 20px 50px rgb(0 0 0 / .35);
   animation: rise .25s cubic-bezier(.2, .8, .2, 1);
 }
@@ -237,9 +240,10 @@ button.cab-door::after {
 .cab-detail-card dd.warn { color: var(--bad-ink); }
 .cab-detail-close {
   display: flex; align-items: center; justify-content: center; gap: 10px; min-height: clamp(52px, 12vh, 68px);
-  flex: none; border: 0; border-radius: 14px; background: var(--primary); color: #fff; font: 700 calc(clamp(19px, 4.8vh, 28px) * var(--fs))/1 var(--font-heading), sans-serif;
-  box-shadow: 0 4px 0 color-mix(in srgb, var(--primary) 60%, #000);
+  flex: none; border: 0; border-radius: 20px; background: var(--primary); color: #fff; font: 700 calc(clamp(19px, 4.8vh, 28px) * var(--fs))/1 var(--font-heading), sans-serif;
+  box-shadow: var(--raise-sm);
 }
+.cab-detail-close:active { box-shadow: inset 3px 3px 8px rgb(0 0 0 / .3); }
 .cab-detail-close .icon { width: 1em; height: 1em; }
 .cab-detail-close:focus-visible { outline-color: var(--fg); }
 
@@ -250,21 +254,22 @@ button.cab-door::after {
 .cab-seg { display: flex; gap: 8px; }
 .cab-seg button {
   flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: clamp(50px, 11vh, 64px);
-  border-radius: 14px; border: 3px solid var(--border); background: var(--bg); color: var(--fg);
-  font: 700 calc(clamp(17px, 4vh, 24px) * var(--fs))/1 var(--font-heading), sans-serif;
+  border-radius: 18px; border: 3px solid transparent; background: var(--card); color: var(--fg); box-shadow: var(--raise-sm);
+  font: 700 calc(clamp(17px, 4vh, 24px) * var(--fs))/1 var(--font-heading), sans-serif; transition: background .2s, box-shadow .2s;
 }
 .cab-seg button .icon { width: 1.15em; height: 1.15em; }
 /* the chosen one is filled, not just recoloured */
-.cab-seg button[aria-pressed="true"] { border-color: var(--primary); background: var(--primary); color: #fff; }
+.cab-seg button[aria-pressed="true"] { border-color: var(--primary); background: var(--primary); color: #fff; box-shadow: inset 3px 3px 8px rgb(0 0 0 / .28); }
 .cab-aa { font: 700 .9em/1 var(--font-heading), sans-serif; }
 .cab-aa.big { font-size: 1.25em; }
 .cab-sheet-btn {
   display: flex; align-items: center; justify-content: center; gap: 10px; min-height: clamp(50px, 11vh, 64px);
-  border: 3px solid var(--primary); border-radius: 14px; background: var(--card); color: var(--ask-ink);
+  border: 3px solid var(--primary); border-radius: 18px; background: var(--card); color: var(--ask-ink); box-shadow: var(--raise-sm);
   font: 700 calc(clamp(19px, 4.6vh, 26px) * var(--fs))/1 var(--font-heading), sans-serif;
 }
+.cab-sheet-btn:active { box-shadow: var(--press); }
 .cab-sheet-btn .icon { width: 1.1em; height: 1.1em; }
-.cab.dark .cab-sheet-btn { border-color: #3aa9c4; }
+.cab.dark .cab-sheet-btn { border-color: #4fa59c; }
 .cab-sheet-actions { flex: none; display: flex; gap: 10px; }
 .cab-sheet-actions > * { flex: 1; }
 .cab-sched { flex: 1 1 auto; min-height: 0; overflow: auto; list-style: none; margin: 0; padding: 0; overscroll-behavior: contain; }
@@ -293,15 +298,15 @@ button.cab-door::after {
 .cab-setup-head p { margin: 2px 0 0; color: var(--muted); font-size: clamp(15px, 3.4vh, 20px); line-height: 1.25; }
 .cab-setup-head .cab-setup-error { color: var(--bad-ink); font-weight: 700; }
 .cab-setup-cancel {
-  flex: none; display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 16px; border-radius: 12px;
-  border: 2px solid var(--border); background: var(--card); color: var(--fg); font: 700 clamp(16px, 3.6vh, 20px)/1 var(--font-heading), sans-serif;
+  flex: none; display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 16px; border-radius: 14px;
+  border: 0; background: var(--card); color: var(--fg); box-shadow: var(--raise-sm); font: 700 clamp(16px, 3.6vh, 20px)/1 var(--font-heading), sans-serif;
 }
 .cab-setup-cancel .icon { width: 1.1em; height: 1.1em; }
 .cab-field {
   display: flex; align-items: center; gap: 12px; min-height: clamp(44px, 9.6vh, 60px); padding: 0 6px 0 14px;
-  border: 3px solid var(--border); border-radius: 12px; background: var(--card);
+  border: 3px solid var(--border); border-radius: 16px; background: var(--bg); box-shadow: var(--press);
 }
-.cab-field.on { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 25%, transparent); }
+.cab-field.on { border-color: var(--primary); box-shadow: var(--press), 0 0 0 3px color-mix(in srgb, var(--primary) 25%, transparent); }
 .cab-field > span { flex: none; width: 5.2em; color: var(--muted); font-weight: 700; font-size: clamp(15px, 3.4vh, 20px); }
 .cab-field input {
   flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--fg);
@@ -317,17 +322,17 @@ button.cab-door::after {
 /* the a-l row sits half a key in, like a real keyboard */
 .cab-kb-row.inset { padding: 0 5%; grid-template-columns: repeat(18, minmax(0, 1fr)); }
 .cab-kb button {
-  grid-column: span 2; min-height: 44px; display: grid; place-items: center; border-radius: 10px;
-  border: 0; background: var(--card); color: var(--fg); box-shadow: 0 3px 0 var(--border);
+  grid-column: span 2; min-height: 44px; display: grid; place-items: center; border-radius: 12px;
+  border: 0; background: var(--card); color: var(--fg); box-shadow: var(--raise-sm);
   font: 600 clamp(18px, 4.6vh, 28px)/1 var(--font-body), sans-serif;
 }
-.cab-kb button:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--border); background: var(--bg); }
+.cab-kb button:active { transform: translateY(1px); box-shadow: var(--press); background: var(--bg); }
 .cab-kb button .icon { width: 1.1em; height: 1.1em; }
 .cab-kb .w3 { grid-column: span 3; background: var(--bg); }
 .cab-kb .w4 { grid-column: span 4; font-size: clamp(16px, 3.8vh, 22px); }
 .cab-kb .w8 { grid-column: span 8; }
 .cab-kb .on { background: var(--primary); color: #fff; }
-.cab-kb .go { background: var(--primary); color: #fff; box-shadow: 0 3px 0 color-mix(in srgb, var(--primary) 60%, #000); font-family: var(--font-heading), sans-serif; font-weight: 700; }
+.cab-kb .go { background: var(--primary); color: #fff; font-family: var(--font-heading), sans-serif; font-weight: 700; }
 .cab-kb .go:disabled { opacity: .75; }
 
 /* Tall screens (or a laptop window for testing): stack instead of side by side */
@@ -342,7 +347,8 @@ button.cab-door::after {
 .cab-check { display: grid; gap: clamp(8px, 1.8vh, 12px); }
 .cab-check .cab-took { min-height: clamp(60px, 14vh, 96px); }
 .cab-later {
-  min-height: clamp(48px, 10.5vh, 68px); border: 3px solid var(--muted); border-radius: 18px;
+  min-height: clamp(48px, 10.5vh, 68px); border: 3px solid var(--muted); border-radius: 26px;
   background: var(--card); color: var(--fg); font: 700 calc(clamp(20px, 4.8vh, 30px) * var(--fs))/1 var(--font-heading), sans-serif;
+  box-shadow: var(--raise-sm); transition: transform .15s, box-shadow .15s;
 }
-.cab-later:active:not(:disabled) { transform: translateY(2px); }
+.cab-later:active:not(:disabled) { transform: translateY(2px); box-shadow: var(--press); }

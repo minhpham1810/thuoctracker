@@ -1,18 +1,26 @@
-/* Shared tokens. Clinical pharmacy palette: teal + white, semantic status colors. */
+/* Shared tokens. Calm sage-teal soft UI: surfaces are the same mist as the page and lift with two soft shadows
+   (light from the top left), so cards feel pressed out of the page. Status colours are muted but keep 4.5:1. */
 :root {
-  --primary: #0e7490;        /* teal 700: white text passes 5.4:1 */
-  --primary-strong: #155e75;
-  --primary-soft: #ecfeff;
-  --bg: #f3f8f9;
-  --card: #ffffff;
-  --fg: #0f2b33;
-  --muted: #52666d;
-  --border: #d5e4e8;
-  --ok: #15803d;   --ok-soft: #dcfce7;
-  --warn: #b45309; --warn-soft: #fef3c7;
-  --bad: #b91c1c;  --bad-soft: #fee2e2;
-  --radius: 12px;
-  --shadow: 0 1px 2px rgb(15 43 51 / .06), 0 2px 8px rgb(15 43 51 / .05);
+  --primary: #2a6f6b;        /* sea-green teal: white text passes 5.9:1 */
+  --primary-strong: #235c58;
+  --primary-soft: #e4eeeb;
+  --bg: #e6eeeb;
+  --card: #eef4f2;
+  --fg: #1d302e;
+  --muted: #4e6561;
+  --border: #cfdcd8;
+  --ok: #356e4a;   --ok-soft: #dcebe0;
+  --warn: #8c5a1c; --warn-soft: #f3e6d2;
+  --bad: #a3443b;  --bad-soft: #f4e1dd;
+  /* soft UI: --hi is the lit edge, --lo the shaded one */
+  --hi: rgb(255 255 255 / .85);
+  --lo: rgb(84 112 106 / .28);
+}
+/* declared again on each screen's root so a dark theme's --hi/--lo reach them (var() resolves where declared) */
+:root, .dash, .cab {
+  --raise: -6px -6px 14px var(--hi), 6px 6px 16px var(--lo);
+  --raise-sm: -3px -3px 8px var(--hi), 3px 3px 8px var(--lo);
+  --press: inset 3px 3px 7px var(--lo), inset -3px -3px 7px var(--hi);
 }
 * { box-sizing: border-box; }
 html { font: 16px/1.5 var(--font-body), system-ui, sans-serif; color: var(--fg); }

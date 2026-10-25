@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import AddMedicine from './AddMedicine';
 import { api, hhmm } from './api';
 import { usePoll } from './hooks';
-import { Button, Capsule, Card, clock, colors, fmtDay, pillColor, Section, Status } from './ui';
+import { Button, Capsule, Card, clock, colors, fmtDay, pillColor, Section, soft, Status } from './ui';
 
 const LOW = 5; // backend's low-pill rule; display only
 const EXPIRING_DAYS = 7;
@@ -260,14 +260,14 @@ const s = StyleSheet.create({
   medTop: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 4 },
   box: { backgroundColor: colors.bg, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   boxText: { fontSize: 13, fontWeight: '700', color: colors.text },
-  meter: { height: 6, borderRadius: 3, backgroundColor: colors.bg, overflow: 'hidden', marginTop: 12, marginBottom: 8 },
+  meter: { height: 8, borderRadius: 4, backgroundColor: colors.bg, overflow: 'hidden', marginTop: 12, marginBottom: 8, ...soft.pressed },
   meterFill: { height: '100%', borderRadius: 3 },
   medFoot: { flexDirection: 'row', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 },
   alert: { flexDirection: 'row', gap: 12 },
   alertMark: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   alertTitle: { fontSize: 15, fontWeight: '700', color: colors.text, marginBottom: 2 },
   dayLabel: { fontSize: 13, fontWeight: '700', color: colors.muted, paddingTop: 12 },
-  now: { backgroundColor: colors.card, borderRadius: 20, padding: 20, borderWidth: 1, borderColor: colors.line },
+  now: { backgroundColor: colors.card, borderRadius: 26, padding: 20, ...soft.raised },
   nowTop: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
   nowKicker: { fontSize: 15, fontWeight: '700', color: colors.primaryInk },
   nowTitle: { fontSize: 24, fontWeight: '800', color: colors.text, letterSpacing: -0.4, marginBottom: 6 },

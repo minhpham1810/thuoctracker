@@ -1,7 +1,7 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { api, hhmm } from './api';
 import { usePoll } from './hooks';
-import { Avatar, Badge, clock, colors, fmtDay, Section } from './ui';
+import { Avatar, Badge, clock, colors, fmtDay, Section, soft } from './ui';
 
 const SECTIONS = [['doctor', 'Doctor'], ['patient', 'Patients'], ['family', 'Family']];
 
@@ -56,7 +56,7 @@ export default function People({ user, onOpen }) {
 
 const s = StyleSheet.create({
   center: { textAlign: 'center', marginTop: 40, paddingHorizontal: 24, color: colors.muted, fontSize: 15, lineHeight: 22 },
-  list: { backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.line, overflow: 'hidden' },
+  list: { backgroundColor: colors.card, borderRadius: 22, overflow: 'hidden', ...soft.raised },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 12, minHeight: 68 },
   rule: { borderTopWidth: 1, borderColor: colors.line },
   name: { fontSize: 17, fontWeight: '600', color: colors.text },

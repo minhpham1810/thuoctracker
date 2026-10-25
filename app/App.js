@@ -13,7 +13,7 @@ import Schedule from './src/Schedule';
 import People from './src/People';
 import { clearSession, loadSession, saveSession } from './src/session';
 import SignUp from './src/SignUp';
-import { clock, colors, fmtDay, Logo, Tabs } from './src/ui';
+import { clock, colors, fmtDay, Logo, soft, Tabs } from './src/ui';
 
 // Restore the last login before the first render, so the app opens where it was.
 function restore() {
@@ -186,17 +186,17 @@ async function collectEvents(user) {
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 10,
-            backgroundColor: colors.card, borderBottomWidth: 1, borderColor: colors.line },
-  back: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg },
+            backgroundColor: colors.bg },
+  back: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.card, ...soft.raisedSm },
   backText: { fontSize: 30, lineHeight: 32, color: colors.primaryInk, marginTop: -3 },
   headerTitle: { fontSize: 18, fontWeight: '700', color: colors.text },
   headerSub: { fontSize: 13, color: colors.muted },
-  headerBtn: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 10, backgroundColor: colors.bg },
+  headerBtn: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 14, backgroundColor: colors.card, ...soft.raisedSm },
   headerBtnText: { color: colors.primaryInk, fontSize: 15, fontWeight: '600' },
-  tabsBar: { paddingHorizontal: 16, paddingVertical: 10, backgroundColor: colors.card, borderBottomWidth: 1, borderColor: colors.line },
+  tabsBar: { paddingHorizontal: 16, paddingVertical: 10, backgroundColor: colors.bg },
   banner: { position: 'absolute', top: 64, left: 12, right: 12, flexDirection: 'row', gap: 12, backgroundColor: colors.text,
-            borderRadius: 16, padding: 16, elevation: 8, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 12 },
+            borderRadius: 20, padding: 16, elevation: 8, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 12 },
   bannerMark: { width: 4, borderRadius: 2, backgroundColor: '#FBBF24' },
   bannerTitle: { color: '#fff', fontWeight: '800', fontSize: 16 },
-  bannerBody: { color: '#DCE6E8', fontSize: 15, marginTop: 2, lineHeight: 21 },
+  bannerBody: { color: '#D3DFDB', fontSize: 15, marginTop: 2, lineHeight: 21 },
 });

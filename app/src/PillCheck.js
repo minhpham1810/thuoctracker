@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { api } from './api';
 import { usePoll } from './hooks';
-import { Button, Capsule, clock, colors } from './ui';
+import { Button, Capsule, clock, colors, soft } from './ui';
 
 const ASK_AGAIN_MS = 30 * 60 * 1000; // "Not yet": ask again in 30 minutes
 const ASK_FOR_MS = 3 * 60 * 60 * 1000; // stop asking 3 h after the pill's time: never a nudge toward a late double dose
@@ -100,11 +100,11 @@ export default function PillCheck({ user }) {
 const localTime = (iso) => new Date(iso.slice(0, 19)).getTime();
 
 const s = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(18,40,46,0.55)', justifyContent: 'center', padding: 16 },
-  sheet: { backgroundColor: colors.card, borderRadius: 22, padding: 20, maxHeight: '90%' },
+  backdrop: { flex: 1, backgroundColor: 'rgba(29,48,46,0.5)', justifyContent: 'center', padding: 16 },
+  sheet: { backgroundColor: colors.card, borderRadius: 28, padding: 20, maxHeight: '90%' },
   head: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 6 },
   title: { flex: 1, fontSize: 26, fontWeight: '800', color: colors.text, letterSpacing: -0.4 },
-  close: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg },
+  close: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.card, ...soft.raisedSm },
   closeText: { fontSize: 18, color: colors.muted, fontWeight: '700' },
   item: { paddingVertical: 14 },
   rule: { borderTopWidth: 1, borderColor: colors.line },

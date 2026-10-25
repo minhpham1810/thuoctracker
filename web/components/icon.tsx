@@ -37,7 +37,7 @@ export function Icon({ name, className = "icon" }: { name: IconName; className?:
 
 // The cabinet itself: boxes 1-3, 4-6 and the long box 7. invert: teal body for light backgrounds.
 export function Logo({ size = 34, invert = false }: { size?: number; invert?: boolean }) {
-  const [body, door] = invert ? ["#0e7490", "#fff"] : ["#fff", "#0e7490"];
+  const [body, door] = invert ? ["#2a6f6b", "#fff"] : ["#fff", "#2a6f6b"];
   return (
     <svg width={size} height={size} viewBox="0 0 34 34" aria-hidden="true">
       <rect width="34" height="34" rx="9" fill={body} />

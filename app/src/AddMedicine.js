@@ -2,7 +2,7 @@ import { requireOptionalNativeModule } from 'expo';
 import { useEffect, useState } from 'react';
 import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { api } from './api';
-import { ask, Button, Capsule, colors, ErrorText, Field, Section } from './ui';
+import { ask, Button, Capsule, colors, ErrorText, Field, Section, soft } from './ui';
 
 // The Android build made before expo-image-picker was added has no camera module: say so instead of crashing.
 const ImagePicker = Platform.OS === 'web' || requireOptionalNativeModule('ExponentImagePicker')
@@ -177,23 +177,23 @@ export default function AddMedicine({ patientId, meds, autoScan, onDone }) {
 const s = StyleSheet.create({
   head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   h1: { fontSize: 26, fontWeight: '800', color: colors.text, letterSpacing: -0.5 },
-  cancel: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 10, backgroundColor: colors.card },
+  cancel: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 14, backgroundColor: colors.card, ...soft.raisedSm },
   link: { color: colors.primaryInk, fontSize: 16, fontWeight: '600' },
   muted: { color: colors.muted, fontSize: 14, lineHeight: 20 },
-  scan: { backgroundColor: colors.primaryWash, borderRadius: 18, padding: 16, borderWidth: 1.5, borderStyle: 'dashed',
-          borderColor: 'rgba(14,116,144,0.45)' },
+  scan: { backgroundColor: colors.primaryWash, borderRadius: 22, padding: 16, borderWidth: 1.5, borderStyle: 'dashed',
+          borderColor: 'rgba(42,111,107,0.45)' },
   scanTitle: { fontSize: 18, fontWeight: '700', color: colors.text, marginBottom: 4 },
   photo: { width: '100%', height: 180, marginTop: 12, borderRadius: 12, backgroundColor: colors.card },
-  cabinet: { backgroundColor: colors.cab, borderRadius: 16, padding: 8, gap: 6 },
+  cabinet: { backgroundColor: colors.cab, borderRadius: 18, padding: 8, gap: 6, ...soft.raised },
   boxOpt: { flex: 1, minHeight: 54, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, justifyContent: 'center' },
   boxFree: { backgroundColor: colors.well, borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,0.25)' },
-  boxOn: { backgroundColor: colors.card, borderWidth: 3, borderColor: '#7DD3E3' },
-  boxUsed: { backgroundColor: '#D6E3E6' },
+  boxOn: { backgroundColor: colors.card, borderWidth: 3, borderColor: '#8FD3C8' },
+  boxUsed: { backgroundColor: colors.line },
   boxNum: { fontSize: 17, fontWeight: '800', color: '#fff' },
-  boxSub: { fontSize: 13, color: '#CFE3E8' },
+  boxSub: { fontSize: 13, color: '#C4DBD6' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, borderWidth: 1, borderColor: colors.line2,
-          backgroundColor: colors.card, borderRadius: 999, paddingHorizontal: 14 },
-  chipOn: { borderColor: colors.primary, borderWidth: 2, backgroundColor: colors.primaryWash },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, borderWidth: 1, borderColor: 'transparent',
+          backgroundColor: colors.card, borderRadius: 999, paddingHorizontal: 14, ...soft.raisedSm },
+  chipOn: { borderColor: colors.primary, borderWidth: 2, backgroundColor: colors.primaryWash, ...soft.pressed },
   chipText: { fontSize: 15, color: colors.text },
 });

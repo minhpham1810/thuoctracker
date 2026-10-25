@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { api, hhmm } from './api';
 import { usePoll } from './hooks';
-import { clock, colors, fmtDay } from './ui';
+import { clock, colors, fmtDay, soft } from './ui';
 
 // 1:1 chat with someone in the user's care circle. Fetching it marks their messages read.
 export default function Chat({ user, other }) {
@@ -46,7 +46,7 @@ export default function Chat({ user, other }) {
       />
       <View style={s.bar}>
         <TextInput style={s.input} value={text} onChangeText={setText} placeholder={`Message ${other.name}`}
-                   placeholderTextColor="#7F9398" onSubmitEditing={send} returnKeyType="send" multiline={false}
+                   placeholderTextColor={colors.placeholder} onSubmitEditing={send} returnKeyType="send" multiline={false}
                    accessibilityLabel="Message" />
         <Pressable onPress={send} style={({ pressed }) => [s.send, !text.trim() && { opacity: 0.5 }, pressed && { opacity: 0.75 }]}
                    accessibilityRole="button" accessibilityLabel="Send">
@@ -60,12 +60,12 @@ export default function Chat({ user, other }) {
 const s = StyleSheet.create({
   bubble: { maxWidth: '80%', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 10, marginVertical: 3 },
   mine: { alignSelf: 'flex-end', backgroundColor: colors.primary, borderBottomRightRadius: 6 },
-  theirs: { alignSelf: 'flex-start', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderBottomLeftRadius: 6 },
+  theirs: { alignSelf: 'flex-start', backgroundColor: colors.card, borderBottomLeftRadius: 6, ...soft.raisedSm },
   text: { fontSize: 16, lineHeight: 22, color: colors.text },
   time: { fontSize: 12, color: colors.muted, marginTop: 4, alignSelf: 'flex-end' },
   empty: { textAlign: 'center', color: colors.muted, marginTop: 40, fontSize: 15 },
-  bar: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderTopWidth: 1, borderColor: colors.line, backgroundColor: colors.card },
-  input: { flex: 1, minHeight: 46, fontSize: 16, paddingHorizontal: 16, backgroundColor: colors.bg, borderRadius: 23, color: colors.text },
-  send: { minHeight: 46, justifyContent: 'center', paddingHorizontal: 18, borderRadius: 23, backgroundColor: colors.primary },
+  bar: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, backgroundColor: colors.bg },
+  input: { flex: 1, minHeight: 46, fontSize: 16, paddingHorizontal: 16, backgroundColor: colors.bg, borderRadius: 23, color: colors.text, ...soft.pressed },
+  send: { minHeight: 46, justifyContent: 'center', paddingHorizontal: 18, borderRadius: 23, backgroundColor: colors.primary, ...soft.raisedSm },
   sendText: { color: '#fff', fontWeight: '700', fontSize: 16 },
 });

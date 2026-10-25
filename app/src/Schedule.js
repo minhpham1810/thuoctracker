@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { api } from './api';
 import { usePoll } from './hooks';
-import { ask, Button, Card, clock, colors, ErrorText, Field, Section } from './ui';
+import { ask, Button, Card, clock, colors, ErrorText, Field, Section, soft } from './ui';
 
 const LENGTHS = [15, 30, 60]; // minutes per visit
 const AHEAD_DAYS = 120; // matches the backend's MAX_AHEAD_DAYS (about 3 months)
@@ -358,29 +358,29 @@ const s = StyleSheet.create({
   label: { fontSize: 15, fontWeight: '600', color: colors.text, marginBottom: 8 },
   labelBig: { fontSize: 19 },
   pair: { flexDirection: 'row', gap: 10 },
-  summary: { backgroundColor: colors.card, borderRadius: 20, padding: 20, borderWidth: 1, borderColor: colors.line },
+  summary: { backgroundColor: colors.card, borderRadius: 26, padding: 20, ...soft.raised },
   summaryTitle: { fontSize: 24, fontWeight: '800', color: colors.text, letterSpacing: -0.4, marginBottom: 4 },
-  note: { color: colors.taken, backgroundColor: colors.takenWash, borderRadius: 10, padding: 12, fontSize: 15, marginVertical: 8 },
+  note: { color: colors.taken, backgroundColor: colors.takenWash, borderRadius: 14, padding: 12, fontSize: 15, marginVertical: 8 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
   rule: { borderTopWidth: 1, borderColor: colors.line },
   time: { width: 76, fontSize: 15, fontWeight: '700', color: colors.text, fontVariant: ['tabular-nums'] },
   name: { fontSize: 16, fontWeight: '700', color: colors.text },
   open: { fontSize: 16, fontWeight: '600', color: colors.taken },
-  small: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 10, backgroundColor: colors.bg },
+  small: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 14, backgroundColor: colors.card, ...soft.raisedSm },
   smallText: { color: colors.primaryInk, fontSize: 15, fontWeight: '600' },
   visit: { borderLeftWidth: 4, borderLeftColor: colors.primary },
   visitWhen: { fontSize: 19, fontWeight: '800', color: colors.text, marginBottom: 4 },
   visitWhenBig: { fontSize: 24 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { minHeight: 44, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.card, borderRadius: 999,
+  chip: { minHeight: 44, borderWidth: 1, borderColor: 'transparent', backgroundColor: colors.card, borderRadius: 999, ...soft.raisedSm,
           paddingHorizontal: 16, justifyContent: 'center' },
   chipBig: { minHeight: 54, paddingHorizontal: 20 },
-  chipOn: { borderColor: colors.primary, borderWidth: 2, backgroundColor: colors.primaryWash },
+  chipOn: { borderColor: colors.primary, borderWidth: 2, backgroundColor: colors.primaryWash, ...soft.pressed },
   chipText: { fontSize: 15, color: colors.text, fontVariant: ['tabular-nums'] },
   chipTextBig: { fontSize: 19 },
   chipTextOn: { fontWeight: '700', color: colors.primaryInk },
   calHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  calNav: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg },
+  calNav: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.card, ...soft.raisedSm },
   calNavText: { fontSize: 28, lineHeight: 30, color: colors.primaryInk, marginTop: -3 },
   calTitle: { fontSize: 18, fontWeight: '700', color: colors.text },
   calRow: { flexDirection: 'row' },
@@ -390,7 +390,7 @@ const s = StyleSheet.create({
   calDayBig: { width: 46, height: 46, borderRadius: 23 },
   calOpen: { backgroundColor: colors.takenWash },
   calToday: { borderColor: colors.primary },
-  calOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  calOn: { backgroundColor: colors.primary, borderColor: colors.primary, ...soft.raisedSm },
   calNum: { fontSize: 15, fontWeight: '600', color: colors.text, fontVariant: ['tabular-nums'] },
   calOff: { color: colors.line2, fontWeight: '400' },
   dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.primary, marginTop: 1 },

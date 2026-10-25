@@ -159,7 +159,6 @@ function DoctorView({ doctor, onLogout, display }: { doctor: User; onLogout: () 
   const [tab, setTab] = useState<"alerts" | "messages" | "schedule">("alerts");
   const [chatWith, setChatWith] = useState<number | null>(null);
   const [newAlerts, setNewAlerts] = useState<Set<number>>(new Set());
-  const [confirmReset, setConfirmReset] = useState(false);
   const seen = useRef<Set<number> | null>(null);
   const [popups, setPopups] = useState<Popups>("unsupported");
 
@@ -213,12 +212,6 @@ function DoctorView({ doctor, onLogout, display }: { doctor: User; onLogout: () 
     return () => { clearTimeout(first); clearInterval(t); };
   }, [load]);
 
-  useEffect(() => {
-    if (!confirmReset) return;
-    const t = setTimeout(() => setConfirmReset(false), 4000);
-    return () => clearTimeout(t);
-  }, [confirmReset]);
-
   const patient = data?.patients.find((p) => p.id === selected) ?? data?.patients[0];
 
   async function enablePopups() {
@@ -229,15 +222,6 @@ function DoctorView({ doctor, onLogout, display }: { doctor: User; onLogout: () 
   function message(id: number) {
     setTab("messages");
     setChatWith(id);
-  }
-
-  // Wipes the shared database back to the sample patients: ask twice
-  async function resetDemo() {
-    if (!confirmReset) return setConfirmReset(true);
-    setConfirmReset(false);
-    await api("/demo/reset", { method: "POST" }).catch(() => setOnline(false));
-    seen.current = null;
-    load();
   }
 
   const attention = data?.patients.filter((p) => data.triage[p.id].rank > 0) ?? [];
@@ -258,10 +242,6 @@ function DoctorView({ doctor, onLogout, display }: { doctor: User; onLogout: () 
               <Icon name="bell" /> Turn on popups
             </button>
           )}
-          <button className={`btn btn-quiet btn-sm${confirmReset ? " btn-danger" : ""}`} type="button" onClick={resetDemo}
-            title="Reload the sample patients for everyone using this database">
-            {confirmReset ? "Click again to reset" : "Reset demo"}
-          </button>
           <DisplayMenu display={display} />
           <span className="me"><span className="avatar sm" aria-hidden="true">{initials(doctor.name)}</span>{doctor.name}</span>
           <button className="btn btn-quiet btn-sm" type="button" onClick={onLogout}><Icon name="logout" /> Log out</button>
