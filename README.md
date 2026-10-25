@@ -8,10 +8,10 @@ Built at HackPSU Fall 2026.
 
 ## How it works
 
-- **Cabinet** (Raspberry Pi 5): 3 servo-controlled slots, touchscreen, camera that checks whether a pill was really taken, mic + speaker you can talk to.
+- **Cabinet** (Raspberry Pi 5): 7 pill drawers the patient opens by hand, a 5-inch touchscreen that shows which one to open, and an ESP32 mic + speaker you can talk to, with a volume knob.
 - **Doctor dashboard** (web): patients, taken/missed doses, pills left, live alerts.
 - **Family alerts** (Expo push to the mobile app): missed dose, low pills, expiring soon.
-- **AI**: Gemini reads medicine labels and counts pills from camera photos. Voice questions ("Did I take my pill today?") are heard and answered from the real dose log by Gemma 4 running locally in Ollama, and spoken with ElevenLabs.
+- **AI**: Gemma 4, running locally in Ollama, reads medicine labels (Gemini is the fallback). Voice questions ("Did I take my pill today?") are heard and answered from the real dose log by the same model, and spoken with ElevenLabs.
 
 ## Screenshots
 
@@ -21,9 +21,9 @@ All with the demo data (`/demo/reset`).
 
 ![Doctor dashboard: Grandma Lan's chart, cabinet and alerts](docs/screenshots/dashboard.png)
 
-**Cabinet touchscreen** (`/cabinet?patient=1`, on the Pi's 7-inch screen): at pill time it names the pill out loud and opens its box. The patient taps **I took it**, or the camera sees exactly one pill gone.
+**Cabinet touchscreen** (`/cabinet?patient=1`, on the Pi's 5-inch screen): at pill time it names the pill out loud and shows which box to open. The patient takes the pill and taps **I took it**.
 
-<img src="docs/screenshots/cabinet.png" alt="Cabinet touchscreen at pill time: box 1 open, Aspirin, I took it" width="600">
+<img src="docs/screenshots/cabinet.png" alt="Cabinet touchscreen at pill time: open box 1, Aspirin, I took it" width="600">
 
 **Phone app** (Expo): the patient's pills for today and their medicines; the family sees the same cabinet and can add a medicine by scanning its label.
 
@@ -53,8 +53,8 @@ Nothing talks directly to anything else. The cabinet, screens, phones and AI all
                                         ▼
  ┌────────────────────┐     ┌────────────────────────┐     ┌────────────────────┐
  │ Pi cabinet   pi/   ├────►│ backend/ FastAPI :8000 ├────►│ Gemini             │
- │ servos, camera,    │     │  routes + rules        │     │ labels, pill count │
- │ mic, speaker       │     │  scheduler (every 2 s) │     │                    │
+ │ ESP32 mic,         │     │  routes + rules        │     │ label fallback     │
+ │ speaker, knob      │     │  scheduler (every 2 s) │     │                    │
  └────────────────────┘     │  Tiger Data (Postgres) │     ├────────────────────┤
                             │  /audio/*.mp3          ├────►│ ElevenLabs  voice  │
  ┌────────────────────┐     │                        │     ├────────────────────┤
@@ -68,7 +68,7 @@ Nothing talks directly to anything else. The cabinet, screens, phones and AI all
 
 | Part | Talks to | How |
 |---|---|---|
-| Pi (`pi/main.py`) | backend :8000 | polls `GET /cabinet/{id}/command`, posts slot photos and voice questions, plays `/audio/*.mp3` |
+| Pi (`pi/main.py`) | backend :8000 | polls `GET /cabinet/{id}/command`, posts voice questions, plays `/audio/*.mp3` |
 | Touchscreen + dashboard (`web/`) | backend via Next.js `/api/*` proxy | polls `/cabinet/{id}/state` every 1 s, dashboard polls every 3 s |
 | Mobile app (`app/`) | backend :8000 directly | polls status, alerts and chat; registers for push |
 | Backend (`backend/`) | Gemini, ElevenLabs (through `ai/`), Expo push | the only part that decides anything |
@@ -79,19 +79,19 @@ Nothing talks directly to anything else. The cabinet, screens, phones and AI all
 **Pill time**
 1. The scheduler sees a dose is due → creates a `pending` dose.
 2. `ai.speak()` (ElevenLabs) makes "Time for your blue pill" → MP3 in `/audio/`.
-3. The Pi gets a command: open slot 2, play the MP3. The screen highlights the slot. The patient's phone gets a push.
-4. The Pi photographs the slot before and after. `ai.count_pills()` (Gemini) counts both. Exactly one fewer → **taken**. The patient can also tap "I took it".
+3. The Pi gets a command: play the MP3. The screen shows which box to open. The patient's phone gets a push.
+4. The patient opens the box, takes the pill and taps "I took it" on the screen (or Yes on the phone) → **taken**.
 5. Nothing after 30 min (30 s with `DEMO=1`) → **missed**, push to family, alert on the dashboard.
 
 **Voice question**
 Patient asks "Did I take my pill today?" (Pi mic or the screen's Ask button) → `ai.transcribe()` → `ai.answer()` answers **only from the dose log** (otherwise "ask your doctor") → `ai.speak()` → the Pi or screen plays it.
 
 **New prescription**
-Doctor uploads a label photo on the dashboard → `ai.read_label()` (Gemini) fills in name, dose, times and expiration → the doctor checks every field → saved.
+Doctor uploads a label photo on the dashboard → `ai.read_label()` (local Gemma 4, Gemini fallback) fills in name, dose, times and expiration → the doctor checks every field → saved.
 
 **Background checks:** fewer than 5 pills → refill alert to doctor and family. Expires within 7 days → alert to family. Each alert is sent once.
 
-If a cloud service is down, the demo keeps working: the Pi plays 4 stored sounds, pill counting falls back to the "I took it" tap, and texts are printed in the backend console.
+If a cloud service is down, the demo keeps working: the Pi plays 4 stored sounds and texts are printed in the backend console.
 
 **Safety:** the AI never changes a dose. It only reminds and alerts the doctor and family.
 
@@ -100,8 +100,8 @@ If a cloud service is down, the demo keeps working: the Pi plays 4 stored sounds
 | Dir | Owner | What |
 |---|---|---|
 | `backend/` | Backend | API, data contract (`models.py`), rules, push |
-| `ai/` | AI | label reading, pill counting, voice (pure functions) |
-| `pi/` | Hardware | servos, camera, mic, speaker runtime |
+| `ai/` | AI | label reading, voice (pure functions) |
+| `pi/` | Hardware | ESP32 mic and speaker runtime, screen kiosk |
 | `web/` | Apps | Next.js: doctor dashboard (`/doctor`) and cabinet touchscreen (`/cabinet`) |
 | `app/` | Backend | Expo mobile app for patients, families, doctors: chat + push |
 

@@ -2,7 +2,7 @@
 
 Three parts, then one slide-style edit:
 
-- **Part A: the cabinet** (about 1:15 after trimming). One phone camera films the real cabinet: the Pi screen, the doors, the voice.
+- **Part A: the cabinet** (about 1:15 after trimming). One phone camera films the real cabinet: the Pi screen, the drawers, the voice.
 - **Part B: three phones, three roles** (about 2:45 after trimming). Doctor, patient and family phones are screen-recorded **at the same time, same start, same end**, and shown side by side on one 16:9 slide so judges watch cause and effect: a tap on one phone, the result on another.
 - **Part C: the doctor's drug safety check** (about 0:30). Screen recording of the web dashboard on the laptop.
 
@@ -48,10 +48,10 @@ Frame: the whole cabinet with the Pi screen readable. Patient actor stands next 
 
 | Time | What happens | Narrator |
 |---|---|---|
-| 0:00 | Cabinet idle, Today strip on the screen. | "This is ThuocTracker: a smart pill cabinet for older adults. Seven boxes, a touchscreen, a camera, a speaker and a microphone, run by a Raspberry Pi." |
+| 0:00 | Cabinet idle, Today strip on the screen. | "This is ThuocTracker: a smart pill cabinet for older adults. Seven drawers, a touchscreen, a speaker and a microphone, run by a Raspberry Pi." |
 | 0:08 | Operator presses **Pill time now** on Aspirin, then on Metformin (dashboard, off camera). | "Two pills are due." |
-| 0:10 | The cabinet says *"Hi, Mary Johnson, please pay attention. You have a blue pill and a red pill. Aspirin and Metformin, now."* Box 1 glows and opens. | (let the cabinet speak, no narration) |
-| 0:22 | Mary takes a candy from **box 1 only**. The door closes; the screen says **Good job!** (camera count; if it can't tell, she taps **I took it**). She leaves Metformin. | "The camera counts the pills before and after. One fewer means taken." |
+| 0:10 | The cabinet says *"Hi, Mary Johnson, please pay attention. You have a blue pill and a red pill. Aspirin and Metformin, now."* Box 1 lights up on the screen: **Open box 1 · take 1 pill**. | (let the cabinet speak, no narration) |
+| 0:22 | Mary opens **drawer 1 only**, takes a candy and taps **I took it**; the screen says **Good job!** She leaves Metformin. | "One tap tells the cabinet she took it, and her doctor sees it right away." |
 | 0:30 | (The reminder for Metformin may repeat once: trim it in the edit.) | |
 | 0:40 | 30 seconds after pill time, Metformin is missed. The screen turns calm and asks: **Did you take your Metformin?** Red pill, box 2 lit, **Yes, I took it** / **Not yet**. | "If a pill isn't confirmed, the cabinet doesn't nag and never says 'take it now': a late pill can double up with the next one. It just asks." |
 | 0:48 | Mary taps **Not yet**. | "Not yet: it asks again in 30 minutes. Her family and doctor have already been told." |

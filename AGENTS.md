@@ -6,9 +6,9 @@ Smart pill cabinet (Raspberry Pi 5) + doctor web dashboard + family push alerts.
 
 - **All project code must be written at HackPSU**, not before. Skeleton stubs only until the event.
 - **The AI never changes a dose.** It reminds and alerts only. Voice answers come from the real dose log, never invented.
-- **No AI on the Pi** (1GB RAM). The Pi takes photos/recordings and sends them to the backend; the backend calls Gemini and ElevenLabs.
+- **No AI on the Pi** (1GB RAM). The Pi takes voice recordings and sends them to the backend; the backend calls Gemini and ElevenLabs.
 - **Only the backend talks to the DB and sends push notifications.** Cabinet, screens and AI go through the API.
-- **Auth:** app and dashboard routes need `Authorization: Bearer <token>` from `/login` or `/signup`; cabinet routes (Pi + touchscreen) and `/demo/*` are login-free. Several backends may share one Tiger database: only the `scheduler_lease` holder runs the scheduler, and all shared state (Pi commands, cabinet state, photo counts, alerts sent) is in the DB, never in process memory.
+- **Auth:** app and dashboard routes need `Authorization: Bearer <token>` from `/login` or `/signup`; cabinet routes (Pi + touchscreen) and `/demo/*` are login-free. Several backends may share one Tiger database: only the `scheduler_lease` holder runs the scheduler, and all shared state (Pi commands, cabinet state, alerts sent) is in the DB, never in process memory.
 - Demo network is a 2.4 GHz phone hotspot, never campus WiFi.
 
 ## Team sync (read this first)
@@ -23,19 +23,19 @@ The team coordinates through the repo, not the group chat. Who owns what and the
 ## Layout
 
 - `backend/main.py`: FastAPI routes (contract in TEAM.md; in-memory data, fake AI answers until `ai/` is ready). `backend/models.py`: the shared data contract (Patient, Doctor, Medicine, DoseLog, Alert). Change names there first, then tell the team.
-- `ai/__init__.py`: pure functions: `read_label`, `count_pills`, `transcribe`, `answer`, `speak`. Backend routes wrap them.
-- `pi/main.py`: polls `GET /cabinet/{id}/command`, drives servos/camera/mic/speaker.
+- `ai/__init__.py`: pure functions: `read_label`, `transcribe`, `answer`, `speak`. Backend routes wrap them.
+- `pi/main.py`: polls `GET /cabinet/{id}/command`, drives the ESP32 mic/speaker (the touchscreen runs in Chromium kiosk mode).
 - `web/`: Next.js 16 app (see `web/AGENTS.md`: read `web/node_modules/next/dist/docs/` before using Next APIs). `/doctor` is the dashboard, `/cabinet?patient=1` is the Pi touchscreen (kiosk mode). Pages are client components that poll `/api/*`, which `web/next.config.ts` proxies to the backend. Types that mirror `models.py` are in `web/lib/api.ts`: change them when the contract changes. Plain CSS, tokens in `web/app/globals.css`. Run with `cd web && npm run dev` (port 3000, bound to 0.0.0.0).
 - `app/`: Expo (React Native) mobile app for patient, family and doctor: status, alerts, per-patient chat, push. Plain JS, no router; screens in `app/src/`. Install packages with `npx expo install`, not npm.
 
 ## Rules the backend owns
 
 - Pill time: remind (screen flash + "Time for your pill"), repeat every 10 min, push to the patient's phone and the family's (many patients don't use a phone).
-- No pill removed after 30 min (30 s in demo) -> `missed`, push to family and doctor, plus an inform-only push to the patient (never "take it now"). Screen tap "I took it" counts as taken.
+- Not taken after 30 min (30 s in demo) -> `missed`, push to family and doctor, plus an inform-only push to the patient (never "take it now"). Screen tap "I took it" counts as taken.
 - `pills_left < 5` -> `low_pills` alert to doctor and family.
 - Expiration within 7 days -> `expiring_soon` alert to family and doctor.
-- Same dose opened twice -> screen warning "You already took this one."
-- Taken = camera count before minus after is exactly 1.
+- Same dose confirmed twice -> screen warning "You already took this one."
+- Taken = the patient taps "I took it" on the cabinet screen or Yes in the app (drawers open by hand).
 - Patient app "Did you take your pill?" popup: Yes / Not yet (asks again in 30 min) for due or missed doses, up to 3 h after the pill's time; it asks, never says "take it now". Yes on a missed dose = taken late, push to family + doctor.
 - Appointments: the doctor opens times; the patient or their family books (one conditional UPDATE, never two bookings for one time); patients never see others' bookings; "Appointment soon" push to patient + family 1 h before.
 
@@ -53,4 +53,4 @@ Secrets live in `.env` (see `.env.example`); never commit it.
 
 ## Fallbacks (keep working in the demo)
 
-Servo broken: screen shows the slot, patient opens by hand. Camera count fails: "I took it" tap. ElevenLabs/WiFi down: Pi plays 4 stored sounds. Pi audio fails: ESP32 speaker + laptop mic.
+ElevenLabs/WiFi down: Pi plays 4 stored sounds. Pi audio fails: ESP32 speaker + laptop mic.
