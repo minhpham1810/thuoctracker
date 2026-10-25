@@ -94,57 +94,97 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 
 
 def seed():
-    """Wipe the DB (and every login) and load the demo people. Password for all: DEMO_PASSWORD."""
+    """Wipe the DB (and every login) and load the demo people with two weeks of history. Password: DEMO_PASSWORD.
+    History is built relative to now, so /demo/reset gives the same picture at any time of day."""
     today = date.today()
     now = datetime.now()
+    hours_ago = lambda n: now - timedelta(hours=n)
     pw = hash_password(DEMO_PASSWORD)
+    # patients keep ids 1-3: the cabinet screen and the Pi use ?patient=1. Doctor first so FKs resolve.
+    users = [
+        (4, "doctor@demo.com", "Dr. Miller", "doctor", None, None, None),
+        (1, "mary@demo.com", "Mary Johnson", "patient", 78, 4, None),
+        (2, "robert@demo.com", "Robert Brown", "patient", 82, 4, None),
+        (3, "linda@demo.com", "Linda Davis", "patient", 74, 4, None),
+        (5, "emily@demo.com", "Emily (granddaughter)", "family", None, None, 1),
+        (6, "david@demo.com", "David (son)", "family", None, None, 2),
+        (7, "susan@demo.com", "Susan (daughter)", "family", None, None, 3),
+    ]
+    name = {u[0]: u[2] for u in users}
+    # (patient, medicine, times, slot, pills left, expires in days, color, missed as (days ago, time)).
+    # Mary keeps Aspirin (blue, box 1) and Metformin (red, box 2) from the old demo data. No pill times 10:00-17:59,
+    # so nothing fires on its own during judging ("Pill time now" does). Robert takes everything; Linda forgets bedtime.
+    meds = [
+        (1, "Aspirin", ["08:00"], 1, 24, 180, "blue", {(9, "08:00")}),
+        (1, "Metformin", ["08:00", "18:00"], 2, 4, 150, "red", {(2, "18:00"), (6, "18:00"), (11, "18:00")}),
+        (1, "Atorvastatin", ["21:00"], 3, 26, 5, "white", set()),
+        (2, "Lisinopril", ["09:00"], 1, 21, 210, "yellow", set()),
+        (2, "Amlodipine", ["09:00"], 2, 18, 190, "white", set()),
+        (2, "Tamsulosin", ["21:00"], 3, 25, 240, "orange", set()),
+        (3, "Levothyroxine", ["07:00"], 1, 28, 300, "purple", {(5, "07:00")}),
+        (3, "Atorvastatin", ["21:00"], 2, 12, 120, "white", {(1, "21:00"), (10, "21:00")}),
+        (3, "Donepezil", ["21:00"], 3, 16, 160, "pink", {(1, "21:00"), (4, "21:00"), (10, "21:00")}),
+    ]
+    doses, alerts, sent = [], [], []
+    for mid, (pid, med, times, _, left, expires, _, missed) in enumerate(meds, 1):  # RESTART IDENTITY: ids 1-9
+        for ago in range(14):  # the dashboard shows 14 days
+            for t in times:
+                due = datetime.combine(today - timedelta(days=ago), time.fromisoformat(t))
+                if due >= now:
+                    continue  # still to come: the scheduler starts it
+                if (ago, t) in missed:
+                    doses.append((mid, due, None, "missed", None))
+                    alerts += [("missed", to, pid, f"{name[pid]} missed {med} ({t}).", min(due + timedelta(minutes=30), now))
+                               for to in ("family", "doctor")]
+                else:
+                    late = 1 + (ago * 7 + mid * 3) % 12  # taken 1-12 min after the pill time, the same every reset
+                    doses.append((mid, due, min(due + timedelta(minutes=late), now), "taken", "screen" if late > 9 else "camera"))
+        # same texts as tick(); alerts_sent stops tick() from sending them again
+        if left < 5:
+            alerts += [("low_pills", "doctor", pid, f"{name[pid]} has {left} {med} left. Refill needed.", hours_ago(2)),
+                       ("low_pills", "family", pid, f"{name[pid]} has only {left} {med} left.", hours_ago(2))]
+            sent.append(("low_pills", mid))
+        if expires <= 7:
+            alerts += [("expiring_soon", to, pid, f"{name[pid]}'s {med} expires on {today + timedelta(days=expires)}.",
+                        hours_ago(5)) for to in ("family", "doctor")]
+            sent.append(("expiring_soon", mid))
+    alerts.sort(key=lambda a: a[4])  # /alerts lists by id
+    # Dr. Miller's open times: tomorrow 9:00-11:30 and in 3 days 14:00-15:30, three already booked by family
+    day1 = datetime.combine(today + timedelta(days=1), time(9))
+    day3 = datetime.combine(today + timedelta(days=3), time(14))
+    booked = {day1 + timedelta(hours=1): (1, 5, "Upset stomach after the evening Metformin"),
+              day1 + timedelta(hours=2): (3, 7, "Keeps forgetting her bedtime pills"),
+              day3: (2, 6, "Blood pressure checkup")}
+    slots = [day1 + timedelta(minutes=30 * i) for i in range(6)] + [day3 + timedelta(minutes=30 * i) for i in range(4)]
+    messages = [  # (from, to, text, at, read_at): the last two are unread
+        (6, 4, "Dad's blood pressure has been around 125/80 all week.", hours_ago(50), hours_ago(49)),
+        (4, 6, f"That's great to hear. See you at his checkup on {day3:%A}.", hours_ago(48), hours_ago(47)),
+        (5, 4, "Hi Dr. Miller, Grandma skipped a few evening Metformin doses. She says it upsets her stomach.",
+         hours_ago(26), hours_ago(25)),
+        (4, 5, f"Thanks for telling me. Let's go over it at her visit on {day1:%A}.", hours_ago(25), hours_ago(24)),
+        (5, 4, "She's also down to her last few Metformin. Could you send a refill?", hours_ago(3), hours_ago(2.5)),
+        (4, 5, "Done, the refill is at the pharmacy.", hours_ago(2), hours_ago(1)),
+        (5, 1, "Grandma, I'll pick up your Metformin after work.", hours_ago(1.5), None),
+        (7, 4, "Mom missed her bedtime pills again. The cabinet alerted me and I called her.", hours_ago(0.75), None),
+    ]
     with pool.connection() as c, c.transaction():
         c.execute("TRUNCATE users, medicines, doses, alerts, messages, sessions, cabinet_commands, cabinet_state,"
                   " cabinet_answer, photo_counts, alerts_sent, appointment_slots RESTART IDENTITY CASCADE")
         cur = c.cursor()
-        # patients keep ids 1-3: the cabinet screen and the Pi use ?patient=1. Doctor first so FKs resolve.
-        cur.executemany(
-            "INSERT INTO users (id, email, name, role, age, doctor_id, patient_id, password_hash)"
-            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s)", [
-                (4, "doctor@demo.com", "Dr. Nguyen", "doctor", None, None, None, pw),
-                (1, "lan@demo.com", "Grandma Lan", "patient", 78, 4, None, pw),
-                (2, "tran@demo.com", "Mr. Tran", "patient", 82, 4, None, pw),
-                (3, "hoa@demo.com", "Mrs. Hoa", "patient", 74, 4, None, pw),
-                (5, "minh@demo.com", "Minh (grandson)", "family", None, None, 1, pw),
-                (6, "anh@demo.com", "Anh (son)", "family", None, None, 2, pw),
-            ])
+        cur.executemany("INSERT INTO users (id, email, name, role, age, doctor_id, patient_id, password_hash)"
+                        " VALUES (%s, %s, %s, %s, %s, %s, %s, %s)", [u + (pw,) for u in users])
         c.execute("SELECT setval('users_id_seq', (SELECT max(id) FROM users))")
-        # RESTART IDENTITY: these get ids 1-4 in order
-        cur.executemany(
-            "INSERT INTO medicines (patient_id, name, dose, times, slot, pills_left, expiration, color)"
-            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s)", [
-                (1, "Aspirin", "1 pill", ["08:00", "20:00"], 1, 10, today + timedelta(days=90), "blue"),
-                (1, "Metformin", "1 pill", ["12:00"], 2, 4, today + timedelta(days=5), "red"),
-                (2, "Lisinopril", "1 pill", ["09:00"], 1, 20, today + timedelta(days=200), "yellow"),
-                (3, "Atorvastatin", "1 pill", ["21:00"], 1, 15, today + timedelta(days=120), "white"),
-            ])
-        cur.executemany(
-            "INSERT INTO doses (medicine_id, due_at, taken_at, status, method) VALUES (%s, %s, %s, %s, %s)", [
-                (1, now - timedelta(hours=12), now - timedelta(hours=12, minutes=-3), "taken", "camera"),
-                (2, now - timedelta(hours=24), None, "missed", None),
-            ])
-        cur.executemany(
-            'INSERT INTO alerts (type, "to", patient_id, message, at) VALUES (%s, %s, %s, %s, %s)', [
-                ("missed", "family", 1, "Grandma Lan missed Metformin (12:00).", now - timedelta(hours=23)),
-                ("low_pills", "doctor", 1, "Grandma Lan has 4 Metformin left. Refill needed.", now - timedelta(hours=1)),
-            ])
-        cur.executemany("INSERT INTO messages (from_id, to_id, text, at, read_at) VALUES (%s, %s, %s, %s, %s)", [
-            (5, 4, "Dr. Nguyen, Grandma seems tired after the new Metformin.", now - timedelta(hours=3), now),
-            (4, 5, "Thanks for telling me. Let's talk at her visit on Friday.", now - timedelta(hours=2), now),
-        ])
-        c.execute("INSERT INTO alerts_sent (kind, medicine_id) VALUES ('low_pills', 2)")  # the seeded alert above
-        # Dr. Nguyen's open times tomorrow 9:00-11:00, Grandma Lan already booked at 10:00
-        nine = datetime.combine(today + timedelta(days=1), time(9))
-        cur.executemany(
-            "INSERT INTO appointment_slots (doctor_id, starts_at, minutes, patient_id, booked_by, reason, booked_at)"
-            " VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            [(4, nine + timedelta(minutes=30 * i), 30) + ((1, 5, "Feeling tired on the new Metformin", now)
-                                                          if i == 2 else (None, None, None, None)) for i in range(4)])
+        cur.executemany("INSERT INTO medicines (patient_id, name, dose, times, slot, pills_left, expiration, color)"
+                        " VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                        [(pid, med, "1 pill", times, slot, left, today + timedelta(days=exp), color)
+                         for pid, med, times, slot, left, exp, color, _ in meds])
+        cur.executemany("INSERT INTO doses (medicine_id, due_at, taken_at, status, method) VALUES (%s, %s, %s, %s, %s)", doses)
+        cur.executemany('INSERT INTO alerts (type, "to", patient_id, message, at) VALUES (%s, %s, %s, %s, %s)', alerts)
+        cur.executemany("INSERT INTO alerts_sent (kind, medicine_id) VALUES (%s, %s)", sent)
+        cur.executemany("INSERT INTO messages (from_id, to_id, text, at, read_at) VALUES (%s, %s, %s, %s, %s)", messages)
+        cur.executemany("INSERT INTO appointment_slots (doctor_id, starts_at, minutes, patient_id, booked_by, reason, booked_at)"
+                        " VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                        [(4, s, 30, *booked.get(s, (None, None, None)), hours_ago(20) if s in booked else None) for s in slots])
 
 
 # --- Auth ----------------------------------------------------------------------
@@ -388,7 +428,7 @@ def and_list(items: list[str]) -> str:
 
 
 def pill_call(p: Patient, meds: list[Medicine]) -> str:
-    """The pill-time announcement, each pill due now named once: "Hi, Grandma Lan, please pay attention. You have
+    """The pill-time announcement, each pill due now named once: "Hi, Mary Johnson, please pay attention. You have
     a white pill and a blue pill. Atorvastatin and Aspirin, now." It names pills; it never says a dose amount."""
     colors = [f"{'an' if med.color[:1].lower() in 'aeiou' else 'a'} {med.color} pill" for med in meds]
     return f"Hi, {p.name}, please pay attention. You have {and_list(colors)}. {and_list([med.name for med in meds])}, now."

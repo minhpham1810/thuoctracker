@@ -164,7 +164,7 @@ Minh Dau's first job is making **every route below return fake data within the f
 
 Data lives in Tiger Data (Postgres, `DATABASE_URL` in `.env`). **Several backends can run against one database at once.** Only one runs the scheduler (whoever holds the `scheduler_lease` row; another takes over within ~15 s if it stops), and the Pi queue, cabinet screen state and photo counts are in the database, so the Pi, screen and dashboard can each talk to any backend. `GET /health` says `"scheduler": true` on the one running it. Keep laptop clocks on automatic time.
 
-One `users` table, one role per account. Patient: `age`, `doctor_id`. Family: `patient_id`. Demo accounts (password `demo1234`): `doctor@demo.com`, `lan@demo.com` (patient 1), `minh@demo.com` (Lan's family).
+One `users` table, one role per account. Patient: `age`, `doctor_id`. Family: `patient_id`. Demo accounts (password `demo1234`): `doctor@demo.com`, `mary@demo.com` (patient 1), `emily@demo.com` (Mary's family); also `robert@`, `linda@`, `david@`, `susan@demo.com`.
 
 App and dashboard routes need `Authorization: Bearer <token>` (401 without it). Cabinet routes and `/demo/*` are login-free.
 

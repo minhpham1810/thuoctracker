@@ -146,7 +146,7 @@ function Login({ onLogin }: { onLogin: (s: Saved) => void }) {
         </p>
         {signingUp && (
           <label className="field">Name
-            <input value={form.name} onChange={set("name")} required placeholder="Dr. Nguyen" autoComplete="name" />
+            <input value={form.name} onChange={set("name")} required placeholder="Dr. Smith" autoComplete="name" />
           </label>
         )}
         <label className="field">Email

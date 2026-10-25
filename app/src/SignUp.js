@@ -46,7 +46,7 @@ export default function SignUp({ onLogin, onBack }) {
       <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text, marginBottom: 8 }}>I am</Text>
       <Tabs tabs={Object.keys(ROLES)} value={role} onChange={setRole} />
       <Text style={{ fontSize: 15, color: colors.muted, marginTop: 10, marginBottom: 20, lineHeight: 21 }}>{ABOUT[role]}</Text>
-      {field('name', 'Name', { autoCapitalize: 'words', autoComplete: 'name', placeholder: role === 'Family' ? 'e.g. Minh (grandson)' : '' })}
+      {field('name', 'Name', { autoCapitalize: 'words', autoComplete: 'name', placeholder: role === 'Family' ? 'e.g. Alex (grandson)' : '' })}
       {field('email', 'Email', { keyboardType: 'email-address', autoComplete: 'email' })}
       {field('password', 'Password', { secureTextEntry: true, autoComplete: 'new-password', hint: 'at least 6 characters' })}
       {role === 'Patient' && field('age', 'Age', { keyboardType: 'number-pad' })}

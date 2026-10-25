@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 // Lucide icon paths, inlined so there is no icon dependency.
 const PATHS = {
   pill: <><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z" /><path d="m8.5 8.5 7 7" /></>,
@@ -36,17 +38,32 @@ export function Icon({ name, className = "icon" }: { name: IconName; className?:
 }
 
 // The cabinet itself: boxes 1-3, 4-6 and the long box 7. invert: teal body for light backgrounds.
+// The capsule + alert-dot logo (the "ThuocTracker Logo" design canvas). Default: the mark for the teal bars;
+// invert: the app-icon tile, for light backgrounds. app/src/ui.js has the same two as PNGs.
 export function Logo({ size = 34, invert = false }: { size?: number; invert?: boolean }) {
-  const [body, door] = invert ? ["#2a6f6b", "#fff"] : ["#fff", "#2a6f6b"];
-  return (
-    <svg width={size} height={size} viewBox="0 0 34 34" aria-hidden="true">
-      <rect width="34" height="34" rx="9" fill={body} />
-      {/* tall doors with hairline gaps, so it reads as a cabinet; box 2 lit the way the cabinet shows which box to open */}
-      <g fill={door}>
-        {[6, 13.7, 21.4].map((x) => [6, 15.2].map((y) => <rect key={`${x}-${y}`} x={x} y={y} width="6.6" height="8.2" rx="1.2" />))}
-        <rect x="6" y="24.4" width="22" height="3.8" rx="1.2" />
+  const gap = useId(); // mask id: several logos can share a page
+  if (invert) return (
+    <svg width={size} height={size} viewBox="0 0 120 120" aria-hidden="true">
+      <rect width="120" height="120" rx="27" fill="#2a6f6b" />
+      <g transform="rotate(-45 54 54)">
+        <path d="M54 38 H36 A16 16 0 0 0 36 70 H54 Z" fill="#fff" />
+        <path d="M54 38 H72 A16 16 0 0 1 72 70 H54 Z" fill="#9fd1c8" />
       </g>
-      <rect x="13.7" y="6" width="6.6" height="8.2" rx="1.2" fill="#fbbf24" />
+      <circle cx="90" cy="90" r="12" fill="#e0a33a" stroke="#2a6f6b" strokeWidth="5" />
+    </svg>
+  );
+  return (
+    <svg width={size} height={size} viewBox="0 0 120 120" aria-hidden="true">
+      {/* the ring around the dot is a real gap, so the bar's own color shows through */}
+      <mask id={gap}>
+        <rect width="120" height="120" fill="#fff" />
+        <circle cx="96" cy="96" r="15.5" fill="#000" />
+      </mask>
+      <g mask={`url(#${gap})`} transform="rotate(-45 60 60)">
+        <path d="M60 40 H42 A20 20 0 0 0 42 80 H60 Z" fill="#fff" />
+        <rect x="22" y="40" width="76" height="40" rx="20" fill="none" stroke="#fff" strokeWidth="6" />
+      </g>
+      <circle cx="96" cy="96" r="10.5" fill="#e0a33a" />
     </svg>
   );
 }

@@ -4,7 +4,7 @@
 // System font on purpose: it follows the phone's text-size setting, which older family members rely on.
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Children } from 'react';
-import { Alert, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Image, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { prefs } from './session';
 
 export const colors = {
@@ -163,20 +163,11 @@ export function ErrorText({ children }) {
 }
 
 // The cabinet as a mark: boxes 1-3, 4-6, the long box 7, with box 2 lit. onColor: white tile for the coloured header.
+// The capsule + alert-dot logo (the "ThuocTracker Logo" design canvas), as PNGs: react-native-svg is a native
+// module the installed dev builds don't have. Default: the app-icon tile; onColor: the mark for the teal header.
+const LOGO = { tile: require('../assets/logo-tile.png'), onColor: require('../assets/logo-on-color.png') };
 export function Logo({ size = 28, onColor = false }) {
-  const u = size / 34;
-  const [body, fg] = onColor ? ['#fff', colors.primary] : [colors.primary, '#fff'];
-  const door = (lit) => ({ width: 6.6 * u, height: 8.2 * u, borderRadius: 1.2 * u, backgroundColor: lit ? '#FBBF24' : fg });
-  return (
-    <View style={{ width: size, height: size, borderRadius: 9 * u, backgroundColor: body, padding: 6 * u, gap: 1 * u }}>
-      {[0, 1].map((r) => (
-        <View key={r} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-          {[0, 1, 2].map((c) => <View key={c} style={door(r === 0 && c === 1)} />)}
-        </View>
-      ))}
-      <View style={{ height: 3.8 * u, borderRadius: 1.2 * u, backgroundColor: fg }} />
-    </View>
-  );
+  return <Image source={onColor ? LOGO.onColor : LOGO.tile} style={{ width: size, height: size }} />;
 }
 
 // "2026-10-24..." -> "Oct 24"; with the year: "Oct 24, 2026". Manual so it doesn't depend on Intl on the phone.
